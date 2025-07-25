@@ -1,0 +1,182 @@
+[
+  {
+    "name": "Gene LRRK2",
+    "episode_body": "{\"gene\": {\"symbol\": \"LRRK2\", \"chromosome\": \"17\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000000",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000000\", \"gene_symbol\": \"LRRK2\", \"p_value\": 1.8653396113309247e-13, \"odds_ratio\": 1.10719473609927, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score LRRK2",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"LRRK2\", \"genetic_evidence_score\": 1.2729242087233437, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105029\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene SNCA",
+    "episode_body": "{\"gene\": {\"symbol\": \"SNCA\", \"chromosome\": \"6\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000001",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000001\", \"gene_symbol\": \"SNCA\", \"p_value\": 2.7965863754164493e-12, \"odds_ratio\": 1.6848275671565471, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score SNCA",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"SNCA\", \"genetic_evidence_score\": 1.1553371762501503, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105075\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene GBA1",
+    "episode_body": "{\"gene\": {\"symbol\": \"GBA1\", \"chromosome\": \"17\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000002",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000002\", \"gene_symbol\": \"GBA1\", \"p_value\": 4.481832358523403e-15, \"odds_ratio\": 1.43624394942664, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score GBA1",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"GBA1\", \"genetic_evidence_score\": 1.4348544392140503, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105108\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene MAPT",
+    "episode_body": "{\"gene\": {\"symbol\": \"MAPT\", \"chromosome\": \"1\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000003",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000003\", \"gene_symbol\": \"MAPT\", \"p_value\": 6.513115830633593e-14, \"odds_ratio\": 1.3846285226549633, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score MAPT",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"MAPT\", \"genetic_evidence_score\": 1.3186211198172042, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105136\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene VPS35",
+    "episode_body": "{\"gene\": {\"symbol\": \"VPS35\", \"chromosome\": \"17\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000004",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000004\", \"gene_symbol\": \"VPS35\", \"p_value\": 7.530420602721869e-15, \"odds_ratio\": 1.2004918673166505, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score VPS35",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"VPS35\", \"genetic_evidence_score\": 1.412318076611805, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105163\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene PINK1",
+    "episode_body": "{\"gene\": {\"symbol\": \"PINK1\", \"chromosome\": \"17\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000005",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000005\", \"gene_symbol\": \"PINK1\", \"p_value\": 3.831204172209325e-14, \"odds_ratio\": 1.6147864292498917, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score PINK1",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"PINK1\", \"genetic_evidence_score\": 1.3416664703015329, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105187\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene PRKN",
+    "episode_body": "{\"gene\": {\"symbol\": \"PRKN\", \"chromosome\": \"1\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000006",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000006\", \"gene_symbol\": \"PRKN\", \"p_value\": 3.784263930033593e-13, \"odds_ratio\": 1.5185267226969879, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score PRKN",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"PRKN\", \"genetic_evidence_score\": 1.2422018581741716, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105209\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene RAB29",
+    "episode_body": "{\"gene\": {\"symbol\": \"RAB29\", \"chromosome\": \"4\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000007",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000007\", \"gene_symbol\": \"RAB29\", \"p_value\": 2.8502135025913572e-11, \"odds_ratio\": 1.1471421206866337, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score RAB29",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"RAB29\", \"genetic_evidence_score\": 1.054512260682504, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105232\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene GCH1",
+    "episode_body": "{\"gene\": {\"symbol\": \"GCH1\", \"chromosome\": \"4\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000008",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000008\", \"gene_symbol\": \"GCH1\", \"p_value\": 3.39004463657525e-13, \"odds_ratio\": 1.5191058569221416, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score GCH1",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"GCH1\", \"genetic_evidence_score\": 1.246979458342208, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105253\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  },
+  {
+    "name": "Gene TMEM175",
+    "episode_body": "{\"gene\": {\"symbol\": \"TMEM175\", \"chromosome\": \"4\", \"description\": \"Gene associated with Parkinson's disease\"}}",
+    "source": "json",
+    "source_description": "PD gene annotations"
+  },
+  {
+    "name": "GWAS Signal rs1000009",
+    "episode_body": "{\"gwas_signal\": {\"variant_id\": \"rs1000009\", \"gene_symbol\": \"TMEM175\", \"p_value\": 1.5788145661816716e-09, \"odds_ratio\": 1.325458042456787, \"population\": \"EUR\", \"study_type\": \"parkinson_disease_meta_analysis\"}}",
+    "source": "json",
+    "source_description": "GWAS association evidence"
+  },
+  {
+    "name": "Evidence Score TMEM175",
+    "episode_body": "{\"evidence_score\": {\"gene_symbol\": \"TMEM175\", \"genetic_evidence_score\": 0.8801668875446562, \"total_evidence_sources\": 1, \"analysis_date\": \"2025-07-22T18:24:32.105276\"}}",
+    "source": "json",
+    "source_description": "Multi-evidence target scoring"
+  }
+]

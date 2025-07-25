@@ -1,0 +1,35 @@
+[project]
+name = "pd_target_identification"
+version = "0.1.0"
+description = "Parkinson's Disease Target Identification Pipeline"
+readme = "README.md"
+
+dependencies = [
+    "dagster",
+    "dagster-webserver",
+    "dagster-cloud",
+    "pandas",
+    "requests",
+    "bioservices",
+    "networkx",
+    "pydantic",
+    "graphiti-core",
+]
+[project.optional-dependencies]
+dev = [
+    "dagster-webserver",
+    "pytest",
+    "black",
+    "ruff"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.dagster]
+module_name = "pd_target_identification.definitions"
+code_location_name = "pd_target_identification"
+
+[tool.setuptools.packages.find]
+exclude=["pd_target_identification_tests"]
