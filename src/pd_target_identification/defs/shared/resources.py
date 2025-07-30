@@ -4,6 +4,13 @@ import requests
 import pandas as pd
 from typing import Optional, Dict, Any, List
 import time
+from datetime import datetime, timedelta
+import xml.etree.ElementTree as ET
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class GWASCatalogResource(ConfigurableResource):
     """Enhanced resource for accessing GWAS Catalog data with complete variant information"""
@@ -382,177 +389,329 @@ class GTExResource(ConfigurableResource):
             'total_cached_genes': len(self._version_cache) + len(self._failed_cache)
         }
     
-# class GTExResource(ConfigurableResource):
-#     """Resource for accessing GTEx Portal API for gene expression data"""
-#     base_url: str = "https://gtexportal.org/api/v2"
+class STRINGResource(ConfigurableResource):
+    """Resource wrapping STRING MCP functionality"""
     
-#     def get_service_info(self) -> Dict[str, Any]:
-#         """Test API connection and get service info"""
-#         url = f"{self.base_url}/dataset/serviceInfo"
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        import sys
+        import asyncio
+        from pathlib import Path
+
+        # FIXED: Use correct absolute path
+        string_mcp_path = Path("/Users/brandonhager/Documents/pd-discovery-platform/mcp_servers")
         
-#         try:
-#             response = requests.get(url, timeout=30)
-#             response.raise_for_status()
-#             return response.json()
-#         except Exception as e:
-#             print(f"Failed to get service info: {e}")
-#             return {}
+        if not string_mcp_path.exists():
+            raise RuntimeError(f"MCP servers path not found: {string_mcp_path}")
+            
+        sys.path.insert(0, str(string_mcp_path))
+
+        # Import the async functions
+        from string_mcp.server import map_proteins, get_network, functional_enrichment
+        
+        # Store as async functions
+        self._map_proteins_async = map_proteins
+        self._get_network_async = get_network  
+        self._functional_enrichment_async = functional_enrichment
     
-#     def get_tissues_dynamically(self) -> List[Dict[str, Any]]:
-#         """
-#         Get available tissues dynamically by querying eQTL genes endpoint
-#         This extracts tissue IDs from actual GTEx data
-#         """
-#         url = f"{self.base_url}/association/eqtlGenes"
+    def get_protein_interactions(self, gene_symbols: List[str]) -> pd.DataFrame:
+        """Get protein interaction network for genes"""
         
-#         # Use a minimal query to get tissue data
-#         params = {
-#             'datasetId': 'gtex_v8',
-#             'itemsPerPage': 1000  # Get enough to see all tissues
-#         }
+        async def _get_interactions():
+            mapped = await self._map_proteins_async(gene_symbols)
+            if 'mapped_proteins' in mapped:
+                network = await self._get_network_async(mapped['mapped_proteins'])
+                return network.get('network_data', {}).get('interactions', [])
+            return []
         
-#         try:
-#             response = requests.get(url, params=params, timeout=30)
-#             response.raise_for_status()
+        # Run the async function
+        import asyncio
+        interactions = asyncio.run(_get_interactions())
+        return pd.DataFrame(interactions)
+    
+    def get_functional_enrichment(self, gene_symbols: List[str]) -> pd.DataFrame:
+        """Get functional enrichment analysis for genes"""
+        
+        async def _get_enrichment():
+            mapped = await self._map_proteins_async(gene_symbols)
+            if 'mapped_proteins' in mapped:
+                enrichment = await self._functional_enrichment_async(mapped['mapped_proteins'])
+                return enrichment.get('enrichment_results', [])
+            return []
+        
+        # Run the async function
+        import asyncio
+        enrichment_results = asyncio.run(_get_enrichment())
+        return pd.DataFrame(enrichment_results)
+    
+class PubMedResource(ConfigurableResource):
+    """Resource for accessing PubMed/NCBI E-utilities API for literature mining"""
+    
+    base_url: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    email: str = os.getenv("NCBI_EMAIL", "")  # Required by NCBI
+    api_key: str = os.getenv("NCBI_API_KEY", "")  # Optional: for higher rate limits
+    tool_name: str = os.getenv("NCBI_TOOL", "pd-target-identification")  # Tool identifier
+    
+    @property
+    def rate_limit_delay(self) -> float:
+        """Get rate limit delay based on API key availability"""
+        # Correct rate limiting: 10 req/sec with API key, 3 req/sec without
+        return 0.1 if self.api_key else 0.34
+    
+    def _log_configuration(self):
+        """Log configuration information"""
+        if not self.email:
+            print("Warning: NCBI_EMAIL not set in environment variables. This is required by NCBI.")
+        if not self.api_key:
+            print("Info: NCBI_API_KEY not set. Rate limited to 3 requests/second.")
+        else:
+            print("Info: Using NCBI API key. Rate limit: 10 requests/second.")
+    
+    def _get_common_params(self) -> Dict[str, str]:
+        """Get common parameters required for all E-utilities requests"""
+        params = {
+            'tool': self.tool_name,
+            'email': self.email
+        }
+        if self.api_key:
+            params['api_key'] = self.api_key
+        return params
+    
+    def search_pubmed(
+        self, 
+        query: str, 
+        max_results: int = 100,
+        years_back: int = 5
+    ) -> List[str]:
+        """
+        Search PubMed and return list of PMIDs
+        
+        Args:
+            query: Search query string
+            max_results: Maximum number of results to return (up to 10,000)
+            years_back: Only include papers from last N years
             
-#             data = response.json()
-#             eqtl_genes = data.get('eqtlGenes', [])
+        Returns:
+            List of PubMed IDs (PMIDs)
+        """
+        # Calculate date range for recent papers
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years_back * 365)
+        date_filter = f"({start_date.year}[Date - Publication] : {end_date.year}[Date - Publication])"
+        
+        # Combine query with date filter
+        full_query = f"({query}) AND {date_filter}"
+        
+        search_params = self._get_common_params()
+        search_params.update({
+            'db': 'pubmed',
+            'term': full_query,
+            'retmax': min(max_results, 10000),  # E-utilities limit
+            'retmode': 'json',
+            'sort': 'relevance'
+        })
             
-#             # Extract unique tissues from the response
-#             tissues_seen = set()
-#             tissue_info = []
+        try:
+            response = requests.get(
+                f"{self.base_url}/esearch.fcgi", 
+                params=search_params,
+                timeout=30
+            )
+            response.raise_for_status()
             
-#             for gene_record in eqtl_genes:
-#                 tissue_id = gene_record.get('tissueSiteDetailId')
-#                 ontology_id = gene_record.get('ontologyId')
+            # Handle API rate limit errors
+            if response.headers.get('content-type', '').startswith('application/json'):
+                data = response.json()
+                if 'error' in data and 'rate limit exceeded' in str(data.get('error', '')).lower():
+                    print(f"API rate limit exceeded for query '{query}'. Consider reducing request frequency.")
+                    return []
+                    
+                pmid_list = data.get('esearchresult', {}).get('idlist', [])
+            else:
+                # Fallback to XML parsing if needed
+                pmid_list = []
+                print(f"Unexpected response format for query '{query}'")
+            
+            # Rate limiting
+            time.sleep(self.rate_limit_delay)
+            
+            return pmid_list
+            
+        except Exception as e:
+            print(f"PubMed search failed for query '{query}': {e}")
+            return []
+    
+    def fetch_abstracts(self, pmid_list: List[str]) -> List[Dict[str, Any]]:
+        """
+        Fetch abstracts for a list of PMIDs
+        
+        Args:
+            pmid_list: List of PubMed IDs
+            
+        Returns:
+            List of paper details with abstracts
+        """
+        if not pmid_list:
+            return []
+            
+        # Batch fetch abstracts (max 200 at a time)
+        papers = []
+        batch_size = 50  # Conservative batch size
+        
+        for i in range(0, len(pmid_list), batch_size):
+            batch_pmids = pmid_list[i:i + batch_size]
+            
+            fetch_params = self._get_common_params()
+            fetch_params['db'] = 'pubmed'
+            fetch_params['id'] = ','.join(batch_pmids)
+            fetch_params['retmode'] = 'xml'
+            fetch_params['rettype'] = 'abstract'
+            
+            try:
+                response = requests.get(
+                    f"{self.base_url}/efetch.fcgi",
+                    params=fetch_params,
+                    timeout=60
+                )
+                response.raise_for_status()
                 
-#                 if tissue_id and tissue_id not in tissues_seen:
-#                     tissues_seen.add(tissue_id)
-#                     tissue_info.append({
-#                         'tissue_id': tissue_id,
-#                         'tissue_name': tissue_id.replace('_', ' '),
-#                         'ontology_id': ontology_id,
-#                         'is_brain_tissue': 'Brain' in tissue_id
-#                     })
-            
-#             # Sort tissues alphabetically
-#             tissue_info.sort(key=lambda x: x['tissue_id'])
-            
-#             return tissue_info
-            
-#         except Exception as e:
-#             print(f"Failed to get tissues dynamically: {e}")
-#             return []
-    
-#     def get_brain_tissues_dynamically(self) -> List[str]:
-#         """Get brain tissue IDs dynamically"""
-#         all_tissues = self.get_tissues_dynamically()
-#         brain_tissues = [t['tissue_id'] for t in all_tissues if t['is_brain_tissue']]
-#         return brain_tissues
-    
-#     def get_median_gene_expression(self, gencode_id: str, dataset_id: str = 'gtex_v8') -> List[Dict[str, Any]]:
-#         """
-#         Get median gene expression data for a single gene across all tissues
-        
-#         Args:
-#             gencode_id: Ensembl gene ID (e.g., 'ENSG00000188906.10')
-#             dataset_id: GTEx dataset ID (default: 'gtex_v8')
-            
-#         Returns:
-#             List of expression records
-#         """
-#         url = f"{self.base_url}/expression/medianGeneExpression"
-        
-#         params = {
-#             'gencodeId': gencode_id,
-#             'datasetId': dataset_id
-#         }
-        
-#         try:
-#             response = requests.get(url, params=params, timeout=30)
-#             response.raise_for_status()
-            
-#             data = response.json()
-#             return data.get('medianGeneExpression', [])
-            
-#         except Exception as e:
-#             print(f"Failed to get expression for {gencode_id}: {e}")
-#             return []
-    
-#     def get_gene_expression_batch(self, ensembl_ids: List[str], tissue_ids: List[str] = None) -> pd.DataFrame:
-#         """
-#         Get median gene expression data from GTEx for multiple genes
-        
-#         Args:
-#             ensembl_ids: List of Ensembl gene IDs (ENSG format)
-#             tissue_ids: List of tissue IDs to filter (if None, gets brain tissues dynamically)
-            
-#         Returns:
-#             DataFrame with expression data
-#         """
-#         if tissue_ids is None:
-#             tissue_ids = self.get_brain_tissues_dynamically()
-        
-#         expression_data = []
-        
-#         for ensembl_id in ensembl_ids:
-#             # Get expression data for this gene
-#             gene_expression = self.get_median_gene_expression(ensembl_id)
-            
-#             for expr_record in gene_expression:
-#                 tissue_id = expr_record.get('tissueSiteDetailId')
+                # Parse XML response
+                batch_papers = self._parse_pubmed_xml(response.text)
+                papers.extend(batch_papers)
                 
-#                 # Filter to requested tissues
-#                 if tissue_id in tissue_ids:
-#                     expression_data.append({
-#                         'ensembl_gene_id': ensembl_id,
-#                         'tissue_id': tissue_id,
-#                         'median_tpm': float(expr_record.get('median', 0.0)),
-#                         'unit': expr_record.get('unit', 'TPM'),
-#                         'sample_count': expr_record.get('numSamples', 0)
-#                     })
-            
-#             # Rate limiting - GTEx recommends not overwhelming their servers
-#             time.sleep(0.2)
+                # Rate limiting between batches
+                time.sleep(self.rate_limit_delay)
+                
+            except Exception as e:
+                print(f"Failed to fetch abstracts for batch {i//batch_size + 1}: {e}")
+                continue
+                
+        return papers
+    
+    def _parse_pubmed_xml(self, xml_content: str) -> List[Dict[str, Any]]:
+        """Parse PubMed XML response and extract paper details"""
+        papers = []
         
-#         return pd.DataFrame(expression_data)
-    
-#     def test_single_gene(self, test_gene: str = 'ENSG00000188906') -> Dict[str, Any]:
-#         """
-#         Test API with a single well-known gene (LRRK2)
-#         """
-#         try:
-#             expression_data = self.get_median_gene_expression(test_gene)
-#             return {
-#                 'gene': test_gene,
-#                 'num_tissues': len(expression_data),
-#                 'sample_data': expression_data[:3] if expression_data else [],
-#                 'success': len(expression_data) > 0
-#             }
-#         except Exception as e:
-#             return {
-#                 'gene': test_gene,
-#                 'error': str(e),
-#                 'success': False
-#             }
-    
-#     def test_tissue_discovery(self) -> Dict[str, Any]:
-#         """
-#         Test the dynamic tissue discovery
-#         """
-#         try:
-#             tissues = self.get_tissues_dynamically()
-#             brain_tissues = [t for t in tissues if t['is_brain_tissue']]
+        try:
+            root = ET.fromstring(xml_content)
             
-#             return {
-#                 'total_tissues': len(tissues),
-#                 'brain_tissues': len(brain_tissues),
-#                 'sample_tissues': [t['tissue_id'] for t in tissues[:5]],
-#                 'brain_tissue_names': [t['tissue_id'] for t in brain_tissues],
-#                 'success': len(tissues) > 0
-#             }
-#         except Exception as e:
-#             return {
-#                 'error': str(e),
-#                 'success': False
-#             }
+            for article in root.findall('.//PubmedArticle'):
+                paper = {}
+                
+                # Extract PMID
+                pmid_elem = article.find('.//PMID')
+                paper['pmid'] = pmid_elem.text if pmid_elem is not None else ''
+                
+                # Extract title
+                title_elem = article.find('.//ArticleTitle')
+                paper['title'] = title_elem.text if title_elem is not None else ''
+                
+                # Extract abstract
+                abstract_parts = []
+                for abstract_text in article.findall('.//AbstractText'):
+                    if abstract_text.text:
+                        abstract_parts.append(abstract_text.text)
+                paper['abstract'] = ' '.join(abstract_parts)
+                
+                # Extract publication year
+                year_elem = article.find('.//PubDate/Year')
+                paper['publication_year'] = int(year_elem.text) if year_elem is not None else None
+                
+                # Extract journal
+                journal_elem = article.find('.//Journal/Title')
+                paper['journal'] = journal_elem.text if journal_elem is not None else ''
+                
+                # Extract authors (first author only for simplicity)
+                first_author_elem = article.find('.//Author[1]/LastName')
+                paper['first_author'] = first_author_elem.text if first_author_elem is not None else ''
+                
+                if paper['pmid']:  # Only add if we have a valid PMID
+                    papers.append(paper)
+                    
+        except ET.ParseError as e:
+            print(f"Error parsing PubMed XML: {e}")
+            
+        return papers
+    
+    def search_gene_literature(
+        self, 
+        gene_symbol: str, 
+        max_papers: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for literature about a specific gene and Parkinson's disease
+        
+        Args:
+            gene_symbol: Gene symbol to search for
+            max_papers: Maximum number of papers to retrieve
+            
+        Returns:
+            List of papers mentioning the gene and PD
+        """
+        # Construct search query for gene + Parkinson's disease
+        query = f'({gene_symbol}[Title/Abstract]) AND (Parkinson*[Title/Abstract] OR PD[Title/Abstract])'
+        
+        print(f"🔍 Searching PubMed for: {gene_symbol} + Parkinson's disease")
+        
+        # Search for PMIDs
+        pmid_list = self.search_pubmed(query, max_results=max_papers)
+        
+        if not pmid_list:
+            print(f"  No papers found for {gene_symbol}")
+            return []
+            
+        print(f"  Found {len(pmid_list)} papers for {gene_symbol}")
+        
+        # Fetch abstracts
+        papers = self.fetch_abstracts(pmid_list)
+        
+        # Add gene context to each paper
+        for paper in papers:
+            paper['target_gene'] = gene_symbol
+            paper['search_query'] = query
+            
+        return papers
+    
+    def batch_gene_literature_search(
+        self, 
+        gene_symbols: List[str], 
+        max_papers_per_gene: int = 30
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Search literature for multiple genes efficiently
+        
+        Args:
+            gene_symbols: List of gene symbols to search
+            max_papers_per_gene: Max papers to retrieve per gene
+            
+        Returns:
+            Dictionary mapping gene symbols to their literature
+        """
+        literature_by_gene = {}
+        
+        print(f"📚 Starting literature search for {len(gene_symbols)} genes")
+        
+        for i, gene_symbol in enumerate(gene_symbols, 1):
+            print(f"  [{i}/{len(gene_symbols)}] Searching {gene_symbol}...")
+            
+            try:
+                papers = self.search_gene_literature(gene_symbol, max_papers_per_gene)
+                literature_by_gene[gene_symbol] = papers
+                
+                # Progress logging
+                if papers:
+                    print(f"    ✅ Found {len(papers)} papers")
+                else:
+                    print(f"    ⚠️ No papers found")
+                    
+            except Exception as e:
+                print(f"    ❌ Search failed: {e}")
+                literature_by_gene[gene_symbol] = []
+                
+            # Rate limiting between genes
+            time.sleep(self.rate_limit_delay * 2)  # Extra conservative
+            
+        total_papers = sum(len(papers) for papers in literature_by_gene.values())
+        print(f"📊 Literature search complete: {total_papers} total papers found")
+        
+        return literature_by_gene

@@ -14,6 +14,11 @@ dependencies = [
     "networkx",
     "pydantic",
     "graphiti-core",
+    "fastmcp>=2.10.6",
+    "mcp>=1.12.2",
+    "python-dotenv",
+    "ipython>=9.4.0",
+    "pytest>=8.4.1",
 ]
 [project.optional-dependencies]
 dev = [
