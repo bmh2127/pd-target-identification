@@ -10,6 +10,7 @@ with comprehensive error handling and quality metrics.
 
 import pandas as pd
 import json
+import numpy as np
 from typing import Dict, List, Any
 from dagster import asset, AssetExecutionContext
 
@@ -413,6 +414,32 @@ def literature_evidence_episodes(
     return pd.DataFrame(episodes)
 
 
+def sanitize_dict_for_json(obj):
+    """
+    Sanitize dictionaries and lists to ensure all numpy types are converted to Python native types.
+    """
+    if obj is None:
+        return None
+    elif isinstance(obj, (bool, int, float, str)):
+        return obj
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.integer, np.floating, np.number)):
+        return obj.item()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {key: sanitize_dict_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_dict_for_json(item) for item in obj]
+    elif hasattr(obj, 'tolist'):  # pandas Series, etc.
+        return obj.tolist()
+    elif hasattr(obj, 'item') and callable(obj.item):  # numpy scalars
+        return obj.item()
+    else:
+        # For any other type, convert to string as fallback
+        return str(obj)
+
 @asset(
     deps=["pathway_network_summary", "string_protein_interactions", "string_functional_enrichment", "multi_evidence_integrated"],
     description="Generate pathway evidence episodes from functional and interaction data"
@@ -456,8 +483,9 @@ def pathway_evidence_episodes(
             if len(gene_pathway_data) == 0:
                 continue
                 
-            # Convert to dict for episode creation
+            # Convert to dict and sanitize numpy arrays
             pathway_data = gene_pathway_data.iloc[0].to_dict()
+            pathway_data = sanitize_dict_for_json(pathway_data)
             
             # Get interaction data for this gene
             interaction_data = None
@@ -467,6 +495,7 @@ def pathway_evidence_episodes(
                 ]
                 if len(gene_interactions) > 0:
                     interaction_data = gene_interactions.to_dict('records')
+                    interaction_data = sanitize_dict_for_json(interaction_data)
             
             # Get enrichment data for this gene
             enrichment_data = None
@@ -476,6 +505,7 @@ def pathway_evidence_episodes(
                 ]
                 if len(gene_enrichments) > 0:
                     enrichment_data = gene_enrichments.to_dict('records')
+                    enrichment_data = sanitize_dict_for_json(enrichment_data)
             
             # Create pathway evidence episode
             episode = create_pathway_evidence_episode(
@@ -498,7 +528,8 @@ def pathway_evidence_episodes(
                 'has_interaction_data': interaction_data is not None,
                 'has_enrichment_data': enrichment_data is not None,
                 'data_completeness': _calculate_episode_completeness(episode),
-                'created_timestamp': pd.Timestamp.now()
+                'created_timestamp': pd.Timestamp.now(),
+                'error_message': None  # No error for successful episodes
             })
             
             successful_episodes += 1
@@ -512,9 +543,14 @@ def pathway_evidence_episodes(
                 'episode_data': None,
                 'validation_status': 'failed',
                 'episode_type': 'pathway_evidence',
-                'error_message': str(e),
+                'interaction_count': 0,  # Default value for failed episodes
+                'pathway_count': 0,      # Default value for failed episodes  
+                'pathway_score': 0.0,    # Default value for failed episodes
+                'has_interaction_data': False,  # Default value for failed episodes
+                'has_enrichment_data': False,   # Default value for failed episodes
                 'data_completeness': 0.0,
-                'created_timestamp': pd.Timestamp.now()
+                'created_timestamp': pd.Timestamp.now(),
+                'error_message': str(e)  # Keep error message as additional info
             })
             
             failed_episodes += 1
