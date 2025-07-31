@@ -11,16 +11,19 @@ with comprehensive error handling and quality metrics.
 import pandas as pd
 import json
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, Any
 from dagster import asset, AssetExecutionContext
+import hashlib
+import os
+from pathlib import Path
+from datetime import datetime
 
 from .episode_generators import (
     create_gene_profile_episode,
     create_gwas_evidence_episode,
     create_eqtl_evidence_episode,
     create_literature_evidence_episode,
-    create_pathway_evidence_episode,
-    generate_episodes_for_gene
+    create_pathway_evidence_episode
 )
 from .schema_constants import DEFAULT_GROUP_ID
 
@@ -577,7 +580,7 @@ def pathway_evidence_episodes(
 
 @asset(
     deps=["multi_evidence_integrated"],
-    description="Generate integration episodes synthesizing all evidence types"
+    description="Generate integration episodes synthesizing all evidence types",
 )
 def integration_episodes(
     context: AssetExecutionContext,
@@ -957,3 +960,348 @@ def graphiti_ready_episodes(
     })
     
     return successful_episodes
+
+@asset(
+    deps=["graphiti_ready_episodes"],
+    description="Export validated episodes to structured JSON files for Graphiti ingestion service",
+    io_manager_key="default_io_manager"
+)
+def graphiti_export(
+    context: AssetExecutionContext,
+    graphiti_ready_episodes: pd.DataFrame
+) -> Dict[str, Any]:
+    """
+    Export 81 validated episodes to structured JSON files for external Graphiti service.
+    
+    Creates a clean handoff between Dagster's data processing and Graphiti's knowledge
+    graph construction by exporting episodes in the proper format and order with
+    comprehensive validation and integrity checks.
+    
+    Returns:
+        Export summary with file locations, checksums, and validation results
+    """
+    context.log.info(f"Starting export of {len(graphiti_ready_episodes)} episodes to JSON files")
+    
+    # Create timestamped export directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_base_dir = Path("exports") / f"graphiti_episodes_{timestamp}"
+    export_base_dir.mkdir(parents=True, exist_ok=True)
+    
+    context.log.info(f"Export directory created: {export_base_dir}")
+    
+    # Define recommended ingestion order
+    recommended_order = [
+        "gene_profile",      # Central entities first
+        "gwas_evidence",     # Genetic associations
+        "eqtl_evidence",     # Regulatory evidence  
+        "literature_evidence", # Publication support
+        "pathway_evidence",  # Functional annotations
+        "integration"        # Multi-evidence synthesis
+    ]
+    
+    export_summary = {
+        'export_timestamp': timestamp,
+        'export_directory': str(export_base_dir),
+        'total_episodes': len(graphiti_ready_episodes),
+        'episodes_by_type': {},
+        'files_created': [],
+        'checksums': {},
+        'validation_results': {},
+        'ingestion_order': recommended_order,
+        'errors': []
+    }
+    
+    # Group episodes by type and export each type to separate files
+    for episode_type in recommended_order:
+        type_episodes = graphiti_ready_episodes[
+            graphiti_ready_episodes['episode_type'] == episode_type
+        ].copy()
+        
+        if len(type_episodes) == 0:
+            context.log.info(f"No episodes found for type: {episode_type}")
+            continue
+            
+        context.log.info(f"Exporting {len(type_episodes)} {episode_type} episodes")
+        
+        # Create type-specific directory
+        type_dir = export_base_dir / "episodes" / episode_type
+        type_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export episodes for this type
+        type_summary = _export_episode_type(
+            context, 
+            type_episodes, 
+            episode_type, 
+            type_dir
+        )
+        
+        export_summary['episodes_by_type'][episode_type] = type_summary
+        export_summary['files_created'].extend(type_summary['files'])
+        export_summary['checksums'].update(type_summary['checksums'])
+        
+        if type_summary['errors']:
+            export_summary['errors'].extend(type_summary['errors'])
+    
+    # Create master manifest file
+    manifest_file = export_base_dir / "manifest.json"
+    manifest_data = _create_export_manifest(export_summary, graphiti_ready_episodes)
+    
+    with open(manifest_file, 'w', encoding='utf-8') as f:
+        json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+    
+    export_summary['manifest_file'] = str(manifest_file)
+    export_summary['manifest_checksum'] = _calculate_file_checksum(manifest_file)
+    
+    # Create validation summary
+    validation_file = export_base_dir / "validation.json" 
+    validation_data = _create_validation_summary(export_summary, graphiti_ready_episodes)
+    
+    with open(validation_file, 'w', encoding='utf-8') as f:
+        json.dump(validation_data, f, indent=2, ensure_ascii=False)
+    
+    export_summary['validation_file'] = str(validation_file)
+    
+    # Calculate overall statistics
+    total_files = len(export_summary['files_created'])
+    total_errors = len(export_summary['errors'])
+    success_rate = ((total_files - total_errors) / max(total_files, 1)) * 100
+    
+    context.log.info(f"Export complete: {total_files} files created, {total_errors} errors, {success_rate:.1f}% success rate")
+    
+    # Add comprehensive metadata for monitoring
+    context.add_output_metadata({
+        "export_timestamp": timestamp,
+        "export_directory": str(export_base_dir),
+        "total_episodes_exported": len(graphiti_ready_episodes),
+        "episode_types_exported": len([t for t in export_summary['episodes_by_type'].keys()]),
+        "files_created": total_files,
+        "total_file_size_mb": f"{sum(os.path.getsize(f) for f in export_summary['files_created'] if os.path.exists(f)) / 1024 / 1024:.2f}",
+        "export_success_rate": f"{success_rate:.1f}%",
+        "manifest_file": str(manifest_file),
+        "validation_file": str(validation_file),
+        "ready_for_graphiti_ingestion": total_errors == 0,
+        "recommended_ingestion_order": recommended_order,
+        "next_step": "Run external Graphiti ingestion service on exported files"
+    })
+    
+    return export_summary
+
+
+def _export_episode_type(
+    context: AssetExecutionContext,
+    episodes_df: pd.DataFrame,
+    episode_type: str,
+    output_dir: Path
+) -> Dict[str, Any]:
+    """
+    Export episodes of a specific type to individual JSON files.
+    
+    Args:
+        context: Dagster execution context
+        episodes_df: Episodes DataFrame for this type
+        episode_type: Type of episodes being exported
+        output_dir: Directory to write files to
+        
+    Returns:
+        Summary of export results for this type
+    """
+    type_summary = {
+        'episode_type': episode_type,
+        'total_episodes': len(episodes_df),
+        'files': [],
+        'checksums': {},
+        'errors': [],
+        'genes_included': []
+    }
+    
+    # Sort episodes by gene symbol for consistent ordering
+    episodes_df = episodes_df.sort_values('gene_symbol')
+    
+    for idx, episode_row in episodes_df.iterrows():
+        try:
+            gene_symbol = episode_row['gene_symbol']
+            episode_name = episode_row['episode_name']
+            episode_data = episode_row['episode_data']
+            
+            # Create standardized filename
+            filename = f"{gene_symbol}_{episode_type}.json"
+            file_path = output_dir / filename
+            
+            # Prepare episode for export with additional metadata
+            export_episode = {
+                'episode_metadata': {
+                    'gene_symbol': gene_symbol,
+                    'episode_name': episode_name,
+                    'episode_type': episode_type,
+                    'export_timestamp': datetime.now().isoformat(),
+                    'validation_status': episode_row.get('validation_status', 'unknown'),
+                    'data_completeness': float(episode_row.get('data_completeness', 0.0))
+                },
+                'graphiti_episode': episode_data  # Original episode data for Graphiti
+            }
+            
+            # Write episode to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(export_episode, f, indent=2, ensure_ascii=False)
+            
+            # Calculate checksum
+            checksum = _calculate_file_checksum(file_path)
+            
+            # Update summary
+            type_summary['files'].append(str(file_path))
+            type_summary['checksums'][filename] = checksum
+            type_summary['genes_included'].append(gene_symbol)
+            
+            context.log.debug(f"Exported {episode_type} episode for {gene_symbol}")
+            
+        except Exception as e:
+            error_msg = f"Failed to export {episode_type} episode for {episode_row.get('gene_symbol', 'unknown')}: {str(e)}"
+            type_summary['errors'].append(error_msg)
+            context.log.error(error_msg)
+    
+    context.log.info(f"Exported {len(type_summary['files'])} {episode_type} episodes with {len(type_summary['errors'])} errors")
+    return type_summary
+
+
+def _create_export_manifest(
+    export_summary: Dict[str, Any], 
+    original_episodes: pd.DataFrame
+) -> Dict[str, Any]:
+    """
+    Create comprehensive manifest file for the export.
+    
+    Args:
+        export_summary: Summary of export process
+        original_episodes: Original episodes DataFrame
+        
+    Returns:
+        Manifest data structure
+    """
+    manifest = {
+        'export_info': {
+            'timestamp': export_summary['export_timestamp'],
+            'directory': export_summary['export_directory'],
+            'dagster_asset': 'graphiti_export',
+            'pipeline_version': '1.0.0'
+        },
+        'episode_summary': {
+            'total_episodes': export_summary['total_episodes'],
+            'episodes_by_type': {
+                ep_type: len(data['files']) 
+                for ep_type, data in export_summary['episodes_by_type'].items()
+            },
+            'genes_included': sorted(original_episodes['gene_symbol'].unique().tolist()),
+            'total_genes': original_episodes['gene_symbol'].nunique()
+        },
+        'ingestion_instructions': {
+            'recommended_order': export_summary['ingestion_order'],
+            'file_format': 'json',
+            'encoding': 'utf-8',
+            'episode_structure': {
+                'episode_metadata': 'Export and validation metadata',
+                'graphiti_episode': 'Original episode data for Graphiti ingestion'
+            }
+        },
+        'validation': {
+            'total_files': len(export_summary['files_created']),
+            'total_errors': len(export_summary['errors']),
+            'success_rate': ((len(export_summary['files_created']) - len(export_summary['errors'])) / max(len(export_summary['files_created']), 1)) * 100,
+            'checksums_available': True
+        },
+        'next_steps': [
+            "Run Graphiti ingestion service on this export directory",
+            "Process episodes in the recommended order",
+            "Validate checksums before ingestion",
+            "Monitor ingestion progress and error rates"
+        ]
+    }
+    
+    return manifest
+
+
+def _create_validation_summary(
+    export_summary: Dict[str, Any],
+    original_episodes: pd.DataFrame  
+) -> Dict[str, Any]:
+    """
+    Create detailed validation summary for troubleshooting.
+    
+    Args:
+        export_summary: Summary of export process
+        original_episodes: Original episodes DataFrame
+        
+    Returns:
+        Validation data structure
+    """
+    validation = {
+        'export_validation': {
+            'timestamp': datetime.now().isoformat(),
+            'total_episodes_in_source': len(original_episodes),
+            'total_files_exported': len(export_summary['files_created']),
+            'export_complete': len(export_summary['errors']) == 0
+        },
+        'episode_type_validation': {},
+        'gene_coverage': {
+            'genes_in_source': sorted(original_episodes['gene_symbol'].unique().tolist()),
+            'genes_exported': [],
+            'missing_genes': []
+        },
+        'file_integrity': {
+            'all_files_have_checksums': True,
+            'checksum_algorithm': 'sha256',
+            'total_export_size_bytes': 0
+        },
+        'errors_and_warnings': export_summary['errors']
+    }
+    
+    # Validate each episode type
+    for episode_type, type_data in export_summary['episodes_by_type'].items():
+        source_count = len(original_episodes[original_episodes['episode_type'] == episode_type])
+        exported_count = len(type_data['files'])
+        
+        validation['episode_type_validation'][episode_type] = {
+            'episodes_in_source': source_count,
+            'files_exported': exported_count,
+            'export_complete': source_count == exported_count,
+            'genes_for_type': type_data['genes_included']
+        }
+        
+        validation['gene_coverage']['genes_exported'].extend(type_data['genes_included'])
+    
+    # Remove duplicates and sort
+    validation['gene_coverage']['genes_exported'] = sorted(list(set(validation['gene_coverage']['genes_exported'])))
+    
+    # Find missing genes
+    source_genes = set(original_episodes['gene_symbol'].unique())
+    exported_genes = set(validation['gene_coverage']['genes_exported'])
+    validation['gene_coverage']['missing_genes'] = sorted(list(source_genes - exported_genes))
+    
+    # Calculate total file size
+    total_size = 0
+    for file_path in export_summary['files_created']:
+        if os.path.exists(file_path):
+            total_size += os.path.getsize(file_path)
+    
+    validation['file_integrity']['total_export_size_bytes'] = total_size
+    validation['file_integrity']['total_export_size_mb'] = round(total_size / 1024 / 1024, 2)
+    
+    return validation
+
+
+def _calculate_file_checksum(file_path: Path) -> str:
+    """
+    Calculate SHA256 checksum for a file.
+    
+    Args:
+        file_path: Path to file
+        
+    Returns:
+        Hex string of SHA256 checksum
+    """
+    sha256_hash = hashlib.sha256()
+    
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(chunk)
+    
+    return sha256_hash.hexdigest()

@@ -1,5 +1,4 @@
-# Updated definitions.py with literature assets
-# Replace your: pd_target_identification/definitions.py
+# pd-target-identification/src/pd_target_identification/definitions.py
 
 from dagster import Definitions
 
@@ -19,7 +18,8 @@ from .defs.knowledge_graph.assets import (
     pathway_evidence_episodes,
     integration_episodes,
     complete_knowledge_graph_episodes,
-    graphiti_ready_episodes
+    graphiti_ready_episodes,
+    graphiti_export
 )
 from .defs.ingestion.gene_mapping.assets import gene_mapping_table, gene_mapping_lookup, dynamic_gene_mapping
 from .defs.ingestion.pathways.assets import (
@@ -69,6 +69,7 @@ all_assets = [
     integration_episodes,
     complete_knowledge_graph_episodes,
     graphiti_ready_episodes,
+    graphiti_export
     
 ]
 
