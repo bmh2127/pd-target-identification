@@ -942,7 +942,7 @@ def graphiti_ready_episodes(
     # Final episode count by type for ingestion planning
     final_episode_counts = successful_episodes['episode_type'].value_counts().to_dict()
     
-    context.log.info(f"Final episode preparation complete")
+    context.log.info("Final episode preparation complete")
     context.log.info(f"Ready for ingestion: {final_episode_counts}")
     
     # Add comprehensive final metadata
@@ -1305,3 +1305,344 @@ def _calculate_file_checksum(file_path: Path) -> str:
             sha256_hash.update(chunk)
     
     return sha256_hash.hexdigest()
+
+
+# ============================================================================
+# GRAPHITI SERVICE INTEGRATION ASSET
+# ============================================================================
+
+@asset(
+    deps=["graphiti_export"],
+    description="Integrate with Graphiti service to ingest episodes and construct knowledge graph",
+    required_resource_keys={"graphiti_service"},
+    io_manager_key="default_io_manager"  # Use filesystem IO manager for dict outputs
+)
+def graphiti_knowledge_graph_ingestion(
+    context: AssetExecutionContext,
+    graphiti_export: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Bridge asset between Dagster data processing and Graphiti knowledge graph construction.
+    
+    This asset:
+    - Takes the validated episode export from graphiti_export
+    - Triggers ingestion through the Graphiti service API
+    - Polls for completion with robust error handling
+    - Returns comprehensive results and statistics
+    
+    Args:
+        context: Dagster execution context with logging
+        graphiti_export: Export summary from graphiti_export asset
+        
+    Returns:
+        Complete ingestion results including operation tracking and final graph statistics
+    """
+    context.log.info("Starting Graphiti knowledge graph ingestion")
+    
+    # Get the Graphiti service resource
+    graphiti_service = context.resources.graphiti_service
+    
+    # Extract export directory from previous asset
+    export_directory = graphiti_export.get('export_directory')
+    if not export_directory:
+        raise ValueError("No export directory found in graphiti_export results")
+    
+    context.log.info(f"Ingesting export directory: {export_directory}")
+    
+    # Log export summary for tracking
+    context.log.info(f"Export summary: {graphiti_export.get('total_episodes', 0)} episodes across {len(graphiti_export.get('episodes_by_type', {}))} types")
+    
+    try:
+        # Step 1: Pre-ingestion validation and health check
+        context.log.info("Performing pre-ingestion health check...")
+        health_status = graphiti_service.health_check()
+        
+        if health_status["status"] != "healthy":
+            error_msg = f"Graphiti service health check failed: {health_status.get('error', 'Unknown error')}"
+            context.log.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "health_status": health_status,
+                "export_info": graphiti_export
+            }
+        
+        context.log.info(f"Service health check passed: {health_status['service_url']}")
+        
+        # Step 2: Get pre-ingestion statistics
+        context.log.info("Getting pre-ingestion graph statistics...")
+        pre_stats = graphiti_service.get_graph_statistics()
+        
+        # Step 3: Trigger ingestion with comprehensive error handling
+        context.log.info("Starting knowledge graph ingestion...")
+        
+        # Use recommended ingestion order if available
+        episode_types_filter = graphiti_export.get('ingestion_order')
+        context.log.info(f"Episode types filter: {episode_types_filter}")
+        
+        # Perform complete ingestion workflow with detailed progress tracking
+        try:
+            ingestion_result = graphiti_service.ingest_and_wait(
+                export_directory=export_directory,
+                validate_files=True,  # Always validate for production
+                force_reingest=False,  # Don't re-ingest unless explicitly needed
+                episode_types_filter=episode_types_filter
+            )
+            
+            # Log detailed ingestion progress
+            if ingestion_result.get("operation_id"):
+                context.log.info(f"Ingestion operation ID: {ingestion_result['operation_id']}")
+            
+            if ingestion_result.get("polling_result"):
+                polling_info = ingestion_result["polling_result"]
+                context.log.info(f"Polling completed in {polling_info.get('elapsed_time', 0):.1f} seconds")
+                
+                if polling_info.get("consecutive_errors", 0) > 0:
+                    context.log.warning(f"Polling had {polling_info['consecutive_errors']} consecutive errors but succeeded")
+            
+        except Exception as e:
+            context.log.error(f"Exception during ingestion workflow: {str(e)}")
+            # Try to get service status for debugging
+            try:
+                service_status = graphiti_service.get_service_status()
+                context.log.info(f"Service status during error: {service_status}")
+            except Exception as status_e:
+                context.log.warning(f"Could not get service status: {status_e}")
+            
+            return {
+                "success": False,
+                "error": f"Ingestion workflow exception: {str(e)}",
+                "error_type": type(e).__name__,
+                "health_status": health_status,
+                "pre_ingestion_stats": pre_stats,
+                "export_info": graphiti_export
+            }
+        
+        if not ingestion_result.get("success"):
+            error_msg = f"Knowledge graph ingestion failed: {ingestion_result.get('error', 'Unknown error')}"
+            context.log.error(error_msg)
+            
+            # Log additional debugging information
+            polling_result = ingestion_result.get("polling_result", {})
+            if polling_result.get("operation_id"):
+                context.log.error(f"Failed operation ID: {polling_result['operation_id']}")
+            if polling_result.get("last_status"):
+                context.log.error(f"Last known status: {polling_result['last_status']}")
+            if polling_result.get("consecutive_errors"):
+                context.log.error(f"Consecutive errors during polling: {polling_result['consecutive_errors']}")
+            
+            return {
+                "success": False,
+                "error": error_msg,
+                "ingestion_result": ingestion_result,
+                "health_status": health_status,
+                "pre_ingestion_stats": pre_stats,
+                "export_info": graphiti_export
+            }
+        
+        # Step 4: Log successful completion details
+        operation_id = ingestion_result.get("operation_id")
+        elapsed_time = ingestion_result.get("total_elapsed_time", 0)
+        
+        context.log.info("Knowledge graph ingestion completed successfully!")
+        context.log.info(f"Operation ID: {operation_id}")
+        context.log.info(f"Total processing time: {elapsed_time:.1f} seconds ({elapsed_time/60:.1f} minutes)")
+        
+        # Step 5: Compare pre/post statistics
+        post_stats = ingestion_result.get("final_statistics", {})
+        stats_comparison = _calculate_ingestion_impact(pre_stats, post_stats)
+        
+        context.log.info(f"Graph growth: {str(stats_comparison)}")
+        
+        # Step 6: Validate ingestion completeness
+        validation_results = _validate_ingestion_completeness(
+            context, 
+            graphiti_export, 
+            ingestion_result, 
+            post_stats
+        )
+        
+        # Prepare comprehensive results
+        final_result = {
+            "success": True,
+            "operation_id": operation_id,
+            "processing_time_seconds": elapsed_time,
+            "processing_time_minutes": elapsed_time / 60,
+            
+            # Core results
+            "ingestion_result": ingestion_result,
+            "health_status": health_status,
+            "validation_results": validation_results,
+            
+            # Statistics tracking
+            "pre_ingestion_stats": pre_stats,
+            "post_ingestion_stats": post_stats,
+            "stats_comparison": stats_comparison,
+            
+            # Export context
+            "export_info": graphiti_export,
+            "episodes_ingested": graphiti_export.get('total_episodes', 0),
+            "episode_types": list(graphiti_export.get('episodes_by_type', {}).keys()),
+            
+            # Status flags
+            "validation_passed": validation_results.get("all_validations_passed", False),
+            "ready_for_queries": validation_results.get("ready_for_queries", False)
+        }
+        
+        # Add comprehensive metadata for monitoring
+        context.add_output_metadata({
+            "operation_id": operation_id,
+            "ingestion_success": True,
+            "processing_time_minutes": f"{elapsed_time/60:.1f}",
+            "episodes_ingested": graphiti_export.get('total_episodes', 0),
+            "episode_types_count": len(graphiti_export.get('episodes_by_type', {})),
+            "graph_nodes_after": post_stats.get("graph_stats", {}).get("knowledge_graph_statistics", {}).get("total_nodes") if post_stats.get("success") else "unknown",
+            "graph_edges_after": post_stats.get("graph_stats", {}).get("knowledge_graph_statistics", {}).get("total_relationships") if post_stats.get("success") else "unknown",
+            "validation_passed": validation_results.get("all_validations_passed", False),
+            "ready_for_research_queries": validation_results.get("ready_for_queries", False),
+            "graphiti_service_url": health_status.get("service_url"),
+            "export_directory": export_directory
+        })
+        
+        context.log.info("Graphiti knowledge graph ingestion completed successfully with full validation")
+        return final_result
+        
+    except Exception as e:
+        # Comprehensive error logging
+        context.log.error(f"Unexpected error during knowledge graph ingestion: {e}")
+        
+        # Attempt to get current service status for debugging
+        try:
+            service_status = graphiti_service.get_service_status()
+        except Exception:
+            service_status = {"error": "Could not retrieve service status"}
+        
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "export_info": graphiti_export,
+            "service_status": service_status,
+            "troubleshooting_hint": "Check Graphiti service logs and ensure service is running and accessible"
+        }
+
+
+def _calculate_ingestion_impact(pre_stats: Dict[str, Any], post_stats: Dict[str, Any]) -> Dict[str, Any]:
+    """Calculate the impact of ingestion on graph statistics"""
+    
+    if not pre_stats.get("success") or not post_stats.get("success"):
+        return {"error": "Could not calculate impact due to missing statistics"}
+    
+    pre_data = pre_stats.get("graph_stats", {}).get("knowledge_graph_statistics", {})
+    post_data = post_stats.get("graph_stats", {}).get("knowledge_graph_statistics", {})
+    
+    if not pre_data or not post_data:
+        return {"error": "Statistics data not available"}
+    
+    pre_nodes = pre_data.get("total_nodes", 0)
+    post_nodes = post_data.get("total_nodes", 0)
+    pre_edges = pre_data.get("total_relationships", 0)
+    post_edges = post_data.get("total_relationships", 0)
+    
+    return {
+        "nodes_added": post_nodes - pre_nodes,
+        "edges_added": post_edges - pre_edges,
+        "nodes_before": pre_nodes,
+        "nodes_after": post_nodes,
+        "edges_before": pre_edges,
+        "edges_after": post_edges,
+        "growth_percentage": {
+            "nodes": ((post_nodes - pre_nodes) / max(pre_nodes, 1)) * 100,
+            "edges": ((post_edges - pre_edges) / max(pre_edges, 1)) * 100
+        }
+    }
+
+
+def _validate_ingestion_completeness(
+    context: AssetExecutionContext,
+    export_info: Dict[str, Any],
+    ingestion_result: Dict[str, Any],
+    post_stats: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Validate that ingestion completed successfully and all data is present"""
+    
+    validation_results = {
+        "all_validations_passed": True,
+        "individual_validations": {},
+        "warnings": [],
+        "errors": []
+    }
+    
+    # Validation 1: Check if ingestion operation completed successfully
+    final_status = ingestion_result.get("polling_result", {}).get("final_status")
+    validation_results["individual_validations"]["operation_completed"] = final_status in ["completed", "success"]
+    
+    if not validation_results["individual_validations"]["operation_completed"]:
+        error_msg = f"Ingestion operation did not complete successfully: {final_status}"
+        validation_results["errors"].append(error_msg)
+        validation_results["all_validations_passed"] = False
+        context.log.error(error_msg)
+    
+    # Validation 2: Check if graph statistics are available
+    graph_stats_available = post_stats.get("success", False) and bool(post_stats.get("graph_stats"))
+    validation_results["individual_validations"]["graph_stats_available"] = graph_stats_available
+    
+    if not graph_stats_available:
+        error_msg = "Knowledge graph statistics not available after ingestion"
+        validation_results["errors"].append(error_msg)
+        validation_results["all_validations_passed"] = False
+        context.log.error(error_msg)
+    
+    # Validation 3: Check expected episode count (if ingestion details available)
+    expected_episodes = export_info.get("total_episodes", 0)
+    validation_results["individual_validations"]["expected_episode_count"] = expected_episodes > 0
+    
+    if expected_episodes == 0:
+        warning_msg = "No episodes were expected to be ingested"
+        validation_results["warnings"].append(warning_msg)
+        context.log.warning(warning_msg)
+    
+    # Validation 4: Check if all episode types were processed
+    expected_types = list(export_info.get("episodes_by_type", {}).keys())
+    validation_results["individual_validations"]["all_episode_types_present"] = len(expected_types) > 0
+    
+    if len(expected_types) == 0:
+        warning_msg = "No episode types found in export"
+        validation_results["warnings"].append(warning_msg)
+        context.log.warning(warning_msg)
+    else:
+        context.log.info(f"Expected episode types: {expected_types}")
+    
+    # Validation 5: Basic graph health check
+    if graph_stats_available:
+        graph_data = post_stats.get("graph_stats", {}).get("knowledge_graph_statistics", {})
+        total_nodes = graph_data.get("total_nodes", 0)
+        total_edges = graph_data.get("total_relationships", 0)
+        
+        graph_has_content = total_nodes > 0 and total_edges > 0
+        validation_results["individual_validations"]["graph_has_content"] = graph_has_content
+        
+        if not graph_has_content:
+            error_msg = f"Knowledge graph appears empty: {total_nodes} nodes, {total_edges} edges"
+            validation_results["errors"].append(error_msg)
+            validation_results["all_validations_passed"] = False
+            context.log.error(error_msg)
+        else:
+            context.log.info(f"Knowledge graph populated: {total_nodes} nodes, {total_edges} edges")
+    
+    # Determine if ready for queries
+    validation_results["ready_for_queries"] = (
+        validation_results["all_validations_passed"] and 
+        validation_results["individual_validations"].get("graph_has_content", False)
+    )
+    
+    # Log validation summary
+    if validation_results["all_validations_passed"]:
+        context.log.info("✅ All ingestion validations passed")
+    else:
+        context.log.warning(f"⚠️ {len(validation_results['errors'])} validation errors found")
+    
+    if validation_results["warnings"]:
+        context.log.warning(f"⚠️ {len(validation_results['warnings'])} validation warnings found")
+    
+    return validation_results

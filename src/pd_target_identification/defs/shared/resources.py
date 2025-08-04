@@ -121,8 +121,7 @@ class GWASCatalogResource(ConfigurableResource):
                         variant_details = self._get_variant_details(snp_url)
                         time.sleep(0.1)  # Rate limiting
                     
-                    # Extract study information
-                    study_links = assoc.get('_links', {}).get('study', {})
+                    # Extract study information (could be extended to use study_links in future)
                     study_info = {
                         'study_accession': 'Unknown',
                         'sample_size': None,
@@ -395,7 +394,6 @@ class STRINGResource(ConfigurableResource):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         import sys
-        import asyncio
         from pathlib import Path
 
         # FIXED: Use correct absolute path
@@ -702,7 +700,7 @@ class PubMedResource(ConfigurableResource):
                 if papers:
                     print(f"    ✅ Found {len(papers)} papers")
                 else:
-                    print(f"    ⚠️ No papers found")
+                    print("    ⚠️ No papers found")
                     
             except Exception as e:
                 print(f"    ❌ Search failed: {e}")
@@ -715,3 +713,427 @@ class PubMedResource(ConfigurableResource):
         print(f"📊 Literature search complete: {total_papers} total papers found")
         
         return literature_by_gene
+
+
+class GraphitiServiceResource(ConfigurableResource):
+    """Resource for integrating with the Graphiti Service API for knowledge graph ingestion"""
+    
+    service_url: str = "http://localhost:8000"
+    request_timeout: int = 300  # 5 minutes default
+    max_retries: int = 3
+    retry_delay: int = 10  # seconds
+    polling_interval: int = 30  # seconds for status polling
+    max_polling_duration: int = 3600  # 1 hour max
+    
+    # Rate limiting prevention (Option B)
+    episode_delay: float = 2.5  # seconds between episodes to prevent OpenAI rate limiting
+    adaptive_delays: bool = True  # Enable adaptive delays based on rate limiting detection
+    min_episode_delay: float = 1.0  # minimum delay between episodes
+    max_episode_delay: float = 10.0  # maximum delay between episodes
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._session = None
+        
+        # Validate configuration (Option B)
+        if self.episode_delay < self.min_episode_delay:
+            self.episode_delay = self.min_episode_delay
+        elif self.episode_delay > self.max_episode_delay:
+            self.episode_delay = self.max_episode_delay
+    
+    @property
+    def session(self):
+        """Get or create HTTP session with appropriate timeouts"""
+        if self._session is None:
+            import requests
+            self._session = requests.Session()
+            # Set default timeouts for all requests
+            self._session.timeout = self.request_timeout
+        return self._session
+    
+    def get_rate_limiting_config(self) -> Dict[str, Any]:
+        """
+        Get current rate limiting configuration (Option B)
+        
+        Returns:
+            Dictionary with current rate limiting settings
+        """
+        return {
+            "episode_delay": self.episode_delay,
+            "adaptive_delays": self.adaptive_delays,
+            "min_episode_delay": self.min_episode_delay,
+            "max_episode_delay": self.max_episode_delay,
+            "expected_time_for_58_episodes": f"{58 * self.episode_delay / 60:.1f} minutes"
+        }
+    
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Check if the Graphiti service is healthy and responsive
+        
+        Returns:
+            Service health status and basic information
+        """
+        try:
+            response = self.session.get(f"{self.service_url}/health", timeout=10)
+            response.raise_for_status()
+            return {
+                "status": "healthy",
+                "service_url": self.service_url,
+                "response_data": response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+            }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "service_url": self.service_url,
+                "error": str(e)
+            }
+    
+    def ingest_export_directory(
+        self, 
+        export_directory: str, 
+        validate_files: bool = True,
+        force_reingest: bool = False,
+        episode_types_filter: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Trigger ingestion of an export directory through the Graphiti service
+        
+        Args:
+            export_directory: Path to the export directory containing episodes
+            validate_files: Whether to validate file checksums
+            force_reingest: Whether to re-ingest already processed episodes
+            episode_types_filter: Optional filter for episode types
+            
+        Returns:
+            Ingestion response with operation ID for tracking
+        """
+        from pathlib import Path
+        
+        # Validate directory exists
+        export_path = Path(export_directory)
+        if not export_path.exists():
+            raise ValueError(f"Export directory does not exist: {export_directory}")
+        
+        if not export_path.is_dir():
+            raise ValueError(f"Path is not a directory: {export_directory}")
+        
+        # Prepare request payload
+        # Use exports/ prefix since the service expects paths relative to /app/ but exports are in /app/exports/
+        request_data = {
+            "directory_path": f"exports/{export_path.name}",
+            "validate_files": validate_files,
+            "force_reingest": force_reingest,
+            # Rate limiting prevention (Option B)
+            "episode_delay": self.episode_delay,
+            "adaptive_delays": self.adaptive_delays,
+            "min_episode_delay": self.min_episode_delay,
+            "max_episode_delay": self.max_episode_delay
+        }
+        
+        if episode_types_filter:
+            request_data["episode_types_filter"] = episode_types_filter
+        
+        # Make request with retries
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.post(
+                    f"{self.service_url}/api/v1/ingest/directory",
+                    json=request_data,
+                    timeout=self.request_timeout
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                return {
+                    "success": True,
+                    "operation_id": result.get("operation_id"),
+                    "status": result.get("status"),
+                    "message": result.get("message"),
+                    "response_data": result,
+                    "attempt": attempt + 1
+                }
+                
+            except Exception as e:
+                print(f"Ingestion attempt {attempt + 1} failed: {e}")
+                
+                if attempt < self.max_retries - 1:
+                    print(f"Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                else:
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "attempts": attempt + 1
+                    }
+    
+    def poll_operation_status(self, operation_id: str) -> Dict[str, Any]:
+        """
+        Poll the status of a background operation until completion or timeout with enhanced error handling
+        
+        Args:
+            operation_id: Operation ID to monitor
+            
+        Returns:
+            Final operation status and results
+        """
+        start_time = time.time()
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+        last_known_status = "unknown"
+        
+        # Rate limiting detection (Option B)
+        progress_history = []
+        rate_limit_detected = False
+        
+        print(f"Starting to poll operation {operation_id} (max duration: {self.max_polling_duration}s)")
+        print(f"🚀 Episode delay configured: {self.episode_delay}s (adaptive: {self.adaptive_delays})")
+        
+        while True:
+            try:
+                # Check operation status
+                response = self.session.get(
+                    f"{self.service_url}/api/v1/status/{operation_id}",
+                    timeout=30
+                )
+                response.raise_for_status()
+                
+                status_data = response.json()
+                consecutive_errors = 0  # Reset error count on successful request
+                
+                # Handle different response formats
+                current_status = status_data.get("status", "unknown")
+                task_status = status_data.get("task_status", {}).get("status", "unknown")
+                progress = status_data.get("progress_percentage", 0)
+                current_step = status_data.get("current_step", "Unknown step")
+                
+                # Use task status if available and more specific
+                if task_status != "unknown":
+                    current_status = task_status
+                
+                last_known_status = current_status
+                
+                # Enhanced progress tracking (Option B)
+                current_time = time.time()
+                elapsed = current_time - start_time
+                
+                # Track progress history for rate limiting detection
+                progress_history.append({
+                    "time": current_time,
+                    "progress": progress,
+                    "status": current_status,
+                    "step": current_step
+                })
+                
+                # Detect rate limiting pattern (progress stuck at same value for >2 minutes)
+                if len(progress_history) >= 4:  # At least 2 minutes of polling (4 * 30s)
+                    recent_progress = [p["progress"] for p in progress_history[-4:]]
+                    if all(p == recent_progress[0] for p in recent_progress) and progress > 0:
+                        if not rate_limit_detected:
+                            print(f"🔄 Rate limiting pattern detected at {progress:.1f}% - processing continues with delays")
+                            rate_limit_detected = True
+                    elif progress > recent_progress[0]:
+                        if rate_limit_detected:
+                            print("✅ Processing resumed after rate limit recovery")
+                            rate_limit_detected = False
+                
+                # Enhanced status display
+                rate_status = " (rate limited)" if rate_limit_detected else ""
+                if progress > 0:
+                    episodes_info = f" - Episode ~{int(progress/100 * 58)}/58" if progress <= 100 else " - Processing final episodes"
+                    print(f"Operation {operation_id} status: {current_status} ({progress:.1f}%{rate_status}){episodes_info}")
+                else:
+                    print(f"Operation {operation_id} status: {current_status} ({progress:.1f}%{rate_status}) - {current_step}")
+                
+                # Check if operation is complete
+                if current_status in ["completed", "success", "failed", "error"]:
+                    success = current_status in ["completed", "success"]
+                    result = {
+                        "completed": True,
+                        "success": success,
+                        "final_status": current_status,
+                        "status_data": status_data,
+                        "elapsed_time": time.time() - start_time,
+                        "operation_id": operation_id,
+                        # Rate limiting stats (Option B)
+                        "rate_limit_detected": rate_limit_detected,
+                        "progress_history": progress_history[-10:],  # Last 10 polling results
+                        "total_polling_cycles": len(progress_history)
+                    }
+                    
+                    if not success:
+                        error_msg = status_data.get("error", f"Operation failed with status: {current_status}")
+                        task_error = status_data.get("task_status", {}).get("error")
+                        if task_error:
+                            error_msg = f"{error_msg}. Task error: {task_error}"
+                        result["error"] = error_msg
+                    
+                    # Enhanced completion message (Option B)
+                    rate_info = " (rate limiting detected)" if rate_limit_detected else " (no rate limiting)"
+                    print(f"✅ Operation {operation_id} completed with status: {current_status}{rate_info}")
+                    print(f"📊 Total time: {result['elapsed_time']:.1f}s, Polling cycles: {len(progress_history)}")
+                    return result
+                
+                # Check for timeout
+                elapsed = time.time() - start_time
+                if elapsed > self.max_polling_duration:
+                    return {
+                        "completed": False,
+                        "success": False,
+                        "error": f"Polling timeout exceeded ({elapsed:.1f}s > {self.max_polling_duration}s)",
+                        "elapsed_time": elapsed,
+                        "last_status": current_status,
+                        "operation_id": operation_id
+                    }
+                
+                # Wait before next poll
+                print(f"  Waiting {self.polling_interval} seconds before next check... (elapsed: {elapsed:.1f}s)")
+                time.sleep(self.polling_interval)
+                
+            except Exception as e:
+                consecutive_errors += 1
+                elapsed = time.time() - start_time
+                
+                print(f"Error polling operation status (attempt {consecutive_errors}): {str(e)}")
+                
+                # If we've had too many consecutive errors, fail
+                if consecutive_errors >= max_consecutive_errors:
+                    return {
+                        "completed": False,
+                        "success": False,
+                        "error": f"Too many consecutive polling errors ({consecutive_errors}): {e}",
+                        "elapsed_time": elapsed,
+                        "last_status": last_known_status,
+                        "operation_id": operation_id,
+                        "consecutive_errors": consecutive_errors
+                    }
+                
+                # Check for timeout on errors too
+                if elapsed > self.max_polling_duration:
+                    return {
+                        "completed": False,
+                        "success": False,
+                        "error": f"Polling failed with timeout after {consecutive_errors} errors: {e}",
+                        "elapsed_time": elapsed,
+                        "last_status": last_known_status,
+                        "operation_id": operation_id,
+                        "consecutive_errors": consecutive_errors
+                    }
+                
+                # Wait before retrying, with exponential backoff
+                wait_time = min(self.polling_interval * (2 ** (consecutive_errors - 1)), 60)
+                print(f"  Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+    
+    def get_service_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive service status information
+        
+        Returns:
+            Service status and statistics
+        """
+        try:
+            response = self.session.get(f"{self.service_url}/api/v1/status", timeout=30)
+            response.raise_for_status()
+            return {
+                "success": True,
+                "status_data": response.json()
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_graph_statistics(self) -> Dict[str, Any]:
+        """
+        Get knowledge graph statistics after ingestion
+        
+        Returns:
+            Graph statistics including node and relationship counts
+        """
+        try:
+            response = self.session.get(f"{self.service_url}/api/v1/stats", timeout=30)
+            response.raise_for_status()
+            return {
+                "success": True,
+                "graph_stats": response.json()
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def ingest_and_wait(
+        self,
+        export_directory: str,
+        validate_files: bool = True,
+        force_reingest: bool = False,
+        episode_types_filter: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Complete ingestion workflow: trigger ingestion and wait for completion
+        
+        Args:
+            export_directory: Path to export directory
+            validate_files: Whether to validate files
+            force_reingest: Whether to force re-ingestion
+            episode_types_filter: Optional episode type filter
+            
+        Returns:
+            Complete ingestion results including final statistics
+        """
+        # Step 1: Health check
+        health = self.health_check()
+        if health["status"] != "healthy":
+            return {
+                "success": False,
+                "error": "Service health check failed",
+                "health_status": health
+            }
+        
+        # Step 2: Trigger ingestion
+        ingestion_result = self.ingest_export_directory(
+            export_directory=export_directory,
+            validate_files=validate_files,
+            force_reingest=force_reingest,
+            episode_types_filter=episode_types_filter
+        )
+        
+        if not ingestion_result.get("success"):
+            return {
+                "success": False,
+                "error": "Failed to trigger ingestion",
+                "ingestion_result": ingestion_result
+            }
+        
+        operation_id = ingestion_result.get("operation_id")
+        if not operation_id:
+            return {
+                "success": False,
+                "error": "No operation ID returned from ingestion request",
+                "ingestion_result": ingestion_result
+            }
+        
+        # Step 3: Poll for completion
+        polling_result = self.poll_operation_status(operation_id)
+        
+        if not polling_result.get("success"):
+            return {
+                "success": False,
+                "error": "Ingestion did not complete successfully",
+                "ingestion_result": ingestion_result,
+                "polling_result": polling_result
+            }
+        
+        # Step 4: Get final statistics
+        final_stats = self.get_graph_statistics()
+        
+        return {
+            "success": True,
+            "operation_id": operation_id,
+            "ingestion_result": ingestion_result,
+            "polling_result": polling_result,
+            "final_statistics": final_stats,
+            "total_elapsed_time": polling_result.get("elapsed_time", 0)
+        }

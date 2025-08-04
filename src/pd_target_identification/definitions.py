@@ -19,7 +19,8 @@ from .defs.knowledge_graph.assets import (
     integration_episodes,
     complete_knowledge_graph_episodes,
     graphiti_ready_episodes,
-    graphiti_export
+    graphiti_export,
+    graphiti_knowledge_graph_ingestion
 )
 from .defs.ingestion.gene_mapping.assets import gene_mapping_table, gene_mapping_lookup, dynamic_gene_mapping
 from .defs.ingestion.pathways.assets import (
@@ -27,7 +28,7 @@ from .defs.ingestion.pathways.assets import (
 )
 
 # Import resources
-from .defs.shared.resources import GWASCatalogResource, GTExResource, STRINGResource, PubMedResource
+from .defs.shared.resources import GWASCatalogResource, GTExResource, STRINGResource, PubMedResource, GraphitiServiceResource
 from .defs.shared.io_managers import pd_duckdb_io_manager, default_io_manager
 
 # Combine all working assets
@@ -69,7 +70,10 @@ all_assets = [
     integration_episodes,
     complete_knowledge_graph_episodes,
     graphiti_ready_episodes,
-    graphiti_export
+    graphiti_export,
+    
+    # Graphiti service integration
+    graphiti_knowledge_graph_ingestion
     
 ]
 
@@ -80,6 +84,14 @@ defs = Definitions(
         "gtex": GTExResource(),
         "string_db": STRINGResource(),
         "pubmed": PubMedResource(),  
+        "graphiti_service": GraphitiServiceResource(
+            service_url="http://localhost:8002",
+            request_timeout=300,  # 5 minutes for requests
+            max_retries=3,
+            retry_delay=15,
+            polling_interval=30,  # Poll every 30 seconds
+            max_polling_duration=7200  # 2 hours max for ingestion
+        ),
         "io_manager": pd_duckdb_io_manager,
         "default_io_manager": default_io_manager
     }
