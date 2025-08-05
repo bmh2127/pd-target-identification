@@ -17,6 +17,7 @@ import hashlib
 import os
 from pathlib import Path
 from datetime import datetime
+from ..shared.episode_config import get_episode_types_for_export
 
 from .episode_generators import (
     create_gene_profile_episode,
@@ -715,7 +716,8 @@ def integration_episodes(
 
 @asset(
     deps=["gene_profile_episodes", "gwas_evidence_episodes", "eqtl_evidence_episodes", 
-          "literature_evidence_episodes", "pathway_evidence_episodes", "integration_episodes"],
+          "literature_evidence_episodes", "pathway_evidence_episodes", "integration_episodes", 
+          "census_validation_episodes"],
     description="Combine all episode types into complete knowledge graph dataset"
 )
 def complete_knowledge_graph_episodes(
@@ -725,7 +727,8 @@ def complete_knowledge_graph_episodes(
     eqtl_evidence_episodes: pd.DataFrame,
     literature_evidence_episodes: pd.DataFrame,
     pathway_evidence_episodes: pd.DataFrame,
-    integration_episodes: pd.DataFrame
+    integration_episodes: pd.DataFrame,
+    census_validation_episodes: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Combine all episode types into a complete knowledge graph dataset.
@@ -738,6 +741,10 @@ def complete_knowledge_graph_episodes(
     """
     context.log.info("Combining all episode types into complete knowledge graph dataset")
     
+    # Census validation episodes are already a DataFrame
+    if len(census_validation_episodes) > 0:
+        context.log.info(f"Adding {len(census_validation_episodes)} Census validation episodes")
+    
     # Combine all episode DataFrames
     all_episodes = pd.concat([
         gene_profile_episodes,
@@ -745,7 +752,8 @@ def complete_knowledge_graph_episodes(
         eqtl_evidence_episodes,
         literature_evidence_episodes,
         pathway_evidence_episodes,
-        integration_episodes
+        integration_episodes,
+        census_validation_episodes  # Add census episodes directly
     ], ignore_index=True)
     
     # Add global episode numbering
@@ -989,15 +997,8 @@ def graphiti_export(
     
     context.log.info(f"Export directory created: {export_base_dir}")
     
-    # Define recommended ingestion order
-    recommended_order = [
-        "gene_profile",      # Central entities first
-        "gwas_evidence",     # Genetic associations
-        "eqtl_evidence",     # Regulatory evidence  
-        "literature_evidence", # Publication support
-        "pathway_evidence",  # Functional annotations
-        "integration"        # Multi-evidence synthesis
-    ]
+    # Get recommended ingestion order from configuration
+    recommended_order = get_episode_types_for_export()
     
     export_summary = {
         'export_timestamp': timestamp,

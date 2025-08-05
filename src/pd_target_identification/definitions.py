@@ -22,6 +22,7 @@ from .defs.knowledge_graph.assets import (
     graphiti_export,
     graphiti_knowledge_graph_ingestion
 )
+from .defs.knowledge_graph.census_episodes import census_validation_episodes
 # Import MCP assets
 from .defs.knowledge_graph.mcp_assets import (
     graphiti_mcp_direct_ingestion,
@@ -79,6 +80,7 @@ all_assets = [
     literature_evidence_episodes,
     pathway_evidence_episodes,
     integration_episodes,
+    census_validation_episodes,  # Census validation episodes
     complete_knowledge_graph_episodes,
     graphiti_ready_episodes,
     graphiti_export,
@@ -99,7 +101,12 @@ defs = Definitions(
         "gtex": GTExResource(),
         "string_db": STRINGResource(),
         "pubmed": PubMedResource(),
-        "census": CellxGeneCensusResource(use_sample_range=False),  # Production mode
+        "census": CellxGeneCensusResource(
+            use_sample_range=True,  # Testing mode for now
+            enable_batch_processing=True,  # Enable batch processing for production
+            genes_per_batch=5,  # Process 5 genes per batch
+            batch_timeout=180  # 3 minutes per batch
+        ),
         "graphiti_service": GraphitiServiceResource(
             service_url="http://localhost:8002",
             request_timeout=300,  # 5 minutes for requests
