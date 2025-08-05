@@ -20,11 +20,9 @@ from .defs.knowledge_graph.assets import (
     complete_knowledge_graph_episodes,
     graphiti_ready_episodes,
     graphiti_export,
-    graphiti_knowledge_graph_ingestion,
-    graphiti_mcp_ingestion
+    graphiti_knowledge_graph_ingestion
 )
-
-# Import new MCP direct integration assets
+# Import MCP assets
 from .defs.knowledge_graph.mcp_assets import (
     graphiti_mcp_direct_ingestion,
     mcp_ingestion_comparison
@@ -79,11 +77,12 @@ all_assets = [
     graphiti_ready_episodes,
     graphiti_export,
     
-    # Graphiti integration approaches
-    graphiti_knowledge_graph_ingestion,  # Service-based approach
-    graphiti_mcp_ingestion,              # Template MCP approach
-    graphiti_mcp_direct_ingestion,       # Production MCP approach
-    mcp_ingestion_comparison             # Comparison analysis
+    # Graphiti service integration
+    graphiti_knowledge_graph_ingestion,
+    
+    # MCP direct integration
+    graphiti_mcp_direct_ingestion,
+    mcp_ingestion_comparison
     
 ]
 

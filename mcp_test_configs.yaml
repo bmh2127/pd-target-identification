@@ -1,0 +1,22 @@
+# MCP Testing Configuration Examples
+# Use these configurations with the graphiti_mcp_direct_ingestion asset
+
+# Test with a fresh group (recommended for first test)
+fresh_test:
+  group_id: "pd_target_discovery_mcp_test"
+  check_existing: true
+
+# Add to existing service data for direct comparison
+service_comparison:
+  group_id: "pd_target_discovery"
+  check_existing: true
+
+# Replace MCP test data
+mcp_replacement:
+  group_id: "pd_discovery_platform"
+  check_existing: true
+
+# Production test with timestamp
+timestamped_test:
+  group_id: "pd_mcp_test_2025_01_08"
+  check_existing: false

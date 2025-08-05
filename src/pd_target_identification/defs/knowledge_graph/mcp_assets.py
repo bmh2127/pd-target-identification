@@ -8,9 +8,8 @@ to the Graphiti MCP server, bypassing the need for a separate service layer.
 
 import asyncio
 import json
-import os
 import subprocess
-from typing import Dict, Any, List
+from typing import Dict, Any
 from pathlib import Path
 from datetime import datetime
 from dagster import asset, AssetExecutionContext, RetryPolicy, Field
@@ -331,7 +330,7 @@ def graphiti_mcp_direct_ingestion(
         
         # Log final summary
         success_rate = (results["successful_episodes"] / results["total_episodes"] * 100) if results["total_episodes"] > 0 else 0
-        context.log.info(f"🎯 MCP Ingestion Complete:")
+        context.log.info("🎯 MCP Ingestion Complete:")
         context.log.info(f"   🏷️ Group ID: {target_group_id}")
         context.log.info(f"   📊 Total Episodes: {results['total_episodes']}")
         context.log.info(f"   ✅ Successful: {results['successful_episodes']}")
@@ -404,6 +403,6 @@ def mcp_ingestion_comparison(
     context.log.info(f"   🏷️ MCP Group: {analysis['mcp_approach']['group_id']}")
     context.log.info(f"   🎯 Episodes Processed: {analysis['mcp_approach']['total_episodes']}")
     context.log.info(f"   📈 Success Rate: {analysis['mcp_approach']['success_rate']:.1f}%")
-    context.log.info(f"   🏗️ Architecture: Direct MCP (simplified)")
+    context.log.info("   🏗️ Architecture: Direct MCP (simplified)")
     
     return analysis
