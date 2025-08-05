@@ -17,7 +17,7 @@ import hashlib
 import os
 from pathlib import Path
 from datetime import datetime
-from ..shared.episode_config import get_episode_types_for_export
+from ..shared.episode_config_yaml import get_episode_types_for_export
 
 from .episode_generators import (
     create_gene_profile_episode,

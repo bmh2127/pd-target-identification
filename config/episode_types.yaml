@@ -1,0 +1,114 @@
+# Episode Type Configuration for PD Target Identification Pipeline
+# This is the single source of truth for all episode types in the pipeline
+
+episode_types:
+  gene_profile:
+    order: 1
+    description: "Central gene entity profiles with comprehensive data"
+    dependencies: []
+    group_name: "knowledge_graph"
+    compute_kind: "python"
+    tags:
+      data_type: "episodes"
+      source: "integration"
+    enabled: true
+
+  gwas_evidence:
+    order: 2
+    description: "Genetic association evidence from GWAS studies"
+    dependencies: ["gene_profile"]
+    group_name: "knowledge_graph"
+    compute_kind: "python"
+    tags:
+      data_type: "episodes"
+      source: "gwas"
+    enabled: true
+
+  eqtl_evidence:
+    order: 3
+    description: "Gene expression regulation evidence from eQTL studies"
+    dependencies: ["gene_profile"]
+    group_name: "knowledge_graph"
+    compute_kind: "python"
+    tags:
+      data_type: "episodes"
+      source: "eqtl"
+    enabled: true
+
+  literature_evidence:
+    order: 4
+    description: "Scientific literature and research evidence"
+    dependencies: ["gene_profile"]
+    group_name: "knowledge_graph"
+    compute_kind: "api"
+    tags:
+      data_type: "episodes"
+      source: "pubmed"
+    enabled: true
+
+  pathway_evidence:
+    order: 5
+    description: "Biological pathway and protein interaction evidence"
+    dependencies: ["gene_profile"]
+    group_name: "knowledge_graph"
+    compute_kind: "api"
+    tags:
+      data_type: "episodes"
+      source: "string"
+    enabled: true
+
+  census_validation:
+    order: 6
+    description: "Single-cell RNA expression validation from CellxGene Census"
+    dependencies: ["gene_profile"]
+    group_name: "knowledge_graph"
+    compute_kind: "python"
+    tags:
+      data_type: "episodes"
+      source: "census"
+    enabled: true
+
+  integration:
+    order: 7
+    description: "Multi-evidence therapeutic target assessments and synthesis"
+    dependencies: 
+      - "gene_profile"
+      - "gwas_evidence"
+      - "eqtl_evidence"
+      - "literature_evidence"
+      - "pathway_evidence"
+      - "census_validation"
+    group_name: "knowledge_graph"
+    compute_kind: "python"
+    tags:
+      data_type: "episodes"
+      source: "integration"
+    enabled: true
+
+# Configuration metadata
+config_metadata:
+  version: "1.0.0"
+  created: "2025-01-05"
+  description: "Dynamic episode type configuration for PD target identification"
+  
+# Environment-specific overrides (can be used for dev/staging/prod)
+environments:
+  development:
+    # Disable computationally expensive episode types for faster dev cycles
+    episode_types:
+      census_validation:
+        enabled: false
+      pathway_evidence:
+        enabled: false
+        
+  testing:
+    # Enable only essential episode types for testing
+    episode_types:
+      census_validation:
+        enabled: false
+      integration:
+        enabled: false
+        
+  production:
+    # All episode types enabled
+    episode_types: {}

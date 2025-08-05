@@ -4,29 +4,41 @@ This guide explains how to add new evidence sources and episode types to the PD 
 
 ## Overview
 
-The pipeline uses a **centralized configuration system** for episode types defined in:
+The pipeline uses a **YAML-based centralized configuration system** for episode types defined in:
 ```
-src/pd_target_identification/defs/shared/episode_config.py
+config/episode_types.yaml                                    # YAML configuration
+src/pd_target_identification/defs/shared/episode_config_yaml.py  # Python loader
 ```
 
-This eliminates hardcoding and makes adding new evidence sources straightforward.
+This eliminates hardcoding and makes adding new evidence sources straightforward, with support for environment-specific configurations.
 
 ## Step-by-Step Guide
 
 ### 1. Add Episode Type Configuration
 
-Edit `src/pd_target_identification/defs/shared/episode_config.py`:
+Edit `config/episode_types.yaml`:
 
-```python
-# Add your new episode type to EPISODE_TYPES
-"your_new_evidence": EpisodeTypeConfig(
-    order=8,  # Choose appropriate order (after dependencies)
-    description="Your evidence source description",
-    dependencies=["gene_profile"],  # What episode types must exist first
-    group_name="knowledge_graph",
-    compute_kind="api",  # "python", "api", or other
-    tags={"data_type": "episodes", "source": "your_source"}
-),
+```yaml
+episode_types:
+  your_new_evidence:
+    order: 8  # Choose appropriate order (after dependencies)
+    description: "Your evidence source description"
+    dependencies: ["gene_profile"]  # What episode types must exist first
+    group_name: "knowledge_graph"
+    compute_kind: "api"  # "python", "api", or other
+    tags:
+      data_type: "episodes"
+      source: "your_source"
+    enabled: true
+```
+
+**Environment-specific configuration** (optional):
+```yaml
+environments:
+  development:
+    episode_types:
+      your_new_evidence:
+        enabled: false  # Disable in dev for faster testing
 ```
 
 ### 2. Create the Episode Asset
@@ -188,22 +200,30 @@ If you have existing hardcoded episode types in:
 - Test files  
 - Configuration files
 
-Update them to import from the centralized configuration:
+Update them to import from the YAML-based configuration:
 
 ```python
-from pd_target_identification.defs.shared.episode_config import (
-    ALL_EPISODE_TYPES,
-    INGESTION_ORDER,
+from pd_target_identification.defs.shared.episode_config_yaml import (
+    get_all_episode_types,
+    get_processing_order,
     get_episode_config
 )
+```
+
+**Environment Configuration**:
+```bash
+# Set environment for different configurations
+export PD_EPISODE_CONFIG_ENV=development  # or testing, production
 ```
 
 ## Troubleshooting
 
 ### Episode Type Not Exported
-- Check that it's added to `episode_config.py`
+- Check that it's added to `config/episode_types.yaml`
 - Verify the order number is unique
 - Ensure dependencies are correct
+- Check that `enabled: true` is set
+- Verify environment configuration if using non-production environment
 
 ### Asset Not Found
 - Check import in `definitions.py`
