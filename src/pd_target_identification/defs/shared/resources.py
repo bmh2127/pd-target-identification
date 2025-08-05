@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 import os
 from dotenv import load_dotenv
+from .census_resource import CellxGeneCensusResource
 
 # Load environment variables from .env file
 load_dotenv()

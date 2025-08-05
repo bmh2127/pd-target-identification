@@ -31,9 +31,11 @@ from .defs.ingestion.gene_mapping.assets import gene_mapping_table, gene_mapping
 from .defs.ingestion.pathways.assets import (
     string_protein_interactions, string_functional_enrichment, pathway_network_summary, multi_evidence_integrated
 )
+from .defs.ingestion.single_cell.assets import census_expression_validation
+from .defs.integration.enhanced_scoring import enhanced_scoring_with_census
 
 # Import resources
-from .defs.shared.resources import GWASCatalogResource, GTExResource, STRINGResource, PubMedResource, GraphitiServiceResource
+from .defs.shared.resources import GWASCatalogResource, GTExResource, STRINGResource, PubMedResource, GraphitiServiceResource, CellxGeneCensusResource
 from .defs.shared.io_managers import pd_duckdb_io_manager, default_io_manager
 
 # Combine all working assets
@@ -66,6 +68,10 @@ all_assets = [
     # Final integration (now includes literature)
     multi_evidence_integrated,
     
+    # Census validation (new)
+    census_expression_validation,
+    enhanced_scoring_with_census,
+    
     # Knowledge graph episode generation assets
     gene_profile_episodes,
     gwas_evidence_episodes,
@@ -92,7 +98,8 @@ defs = Definitions(
         "gwas_catalog": GWASCatalogResource(),
         "gtex": GTExResource(),
         "string_db": STRINGResource(),
-        "pubmed": PubMedResource(),  
+        "pubmed": PubMedResource(),
+        "census": CellxGeneCensusResource(use_sample_range=False),  # Production mode
         "graphiti_service": GraphitiServiceResource(
             service_url="http://localhost:8002",
             request_timeout=300,  # 5 minutes for requests
