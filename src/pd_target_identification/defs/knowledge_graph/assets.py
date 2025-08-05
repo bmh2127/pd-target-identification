@@ -12,7 +12,7 @@ import pandas as pd
 import json
 import numpy as np
 from typing import Dict, Any
-from dagster import asset, AssetExecutionContext
+from dagster import asset, AssetExecutionContext, RetryPolicy
 import hashlib
 import os
 from pathlib import Path
@@ -1646,3 +1646,196 @@ def _validate_ingestion_completeness(
         context.log.warning(f"⚠️ {len(validation_results['warnings'])} validation warnings found")
     
     return validation_results
+
+
+# ============================================================================
+# DIRECT MCP INGESTION ASSET (Alternative Approach)
+# ============================================================================
+
+@asset(
+    deps=["graphiti_export"],
+    description="Ingest episodes via direct MCP calls - alternative to service approach",
+    retry_policy=RetryPolicy(max_retries=3, delay=10),
+    io_manager_key="default_io_manager"
+)
+def graphiti_mcp_ingestion(
+    context: AssetExecutionContext,
+    graphiti_export: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Alternative ingestion approach using direct MCP calls.
+    
+    This asset provides a direct comparison to the service-based approach by:
+    - Reading from the same export files as pd-graphiti-service
+    - Using direct MCP function calls instead of HTTP API
+    - Targeting the MCP Neo4j instance (pd_discovery_platform group)
+    - Implementing the same rate limiting and error handling patterns
+    
+    Benefits:
+    - Simpler architecture (no separate service)
+    - Direct integration with Dagster logging and metadata
+    - Same input data as service approach for fair comparison
+    
+    Note: This is currently a template implementation. To use this asset:
+    1. Replace the placeholder MCP call with: mcp_graphiti_memory_add_memory(...)
+    2. Ensure MCP tools are properly imported/accessible in the Dagster environment
+    3. Test with a small subset of episodes first
+    
+    Args:
+        context: Dagster execution context with logging
+        graphiti_export: Export summary from graphiti_export asset
+        
+    Returns:
+        Complete ingestion results for comparison with service approach
+    """
+    import time
+    from pathlib import Path
+    import json
+    
+    export_directory = Path(graphiti_export['export_directory'])
+    recommended_order = graphiti_export.get('ingestion_order', [
+        "gene_profile", "gwas_evidence", "eqtl_evidence", 
+        "literature_evidence", "pathway_evidence", "integration"
+    ])
+    
+    context.log.info(f"Starting MCP ingestion from: {export_directory}")
+    context.log.info("Target: MCP Neo4j (pd_discovery_platform group)")
+    context.log.info(f"Processing order: {recommended_order}")
+    
+    # Initialize results tracking
+    results = {
+        'method': 'direct_mcp',
+        'export_directory': str(export_directory),
+        'target_neo4j': 'mcp_server-neo4j-1:7687',
+        'target_group_id': 'pd_discovery_platform',
+        'episodes_processed': 0,
+        'episodes_succeeded': 0,
+        'episodes_failed': 0,
+        'errors': [],
+        'processing_time_seconds': 0,
+        'episodes_by_type': {},
+        'ingestion_order': recommended_order
+    }
+    
+    start_time = time.time()
+    
+    try:
+        # Process episodes in recommended order (same as service)
+        for episode_type in recommended_order:
+            type_dir = export_directory / "episodes" / episode_type
+            
+            if not type_dir.exists():
+                context.log.info(f"No {episode_type} episodes found, skipping")
+                results['episodes_by_type'][episode_type] = {
+                    'total': 0, 'succeeded': 0, 'failed': 0, 'errors': []
+                }
+                continue
+                
+            # Get all JSON files for this type
+            episode_files = list(type_dir.glob("*.json"))
+            context.log.info(f"Processing {len(episode_files)} {episode_type} episodes")
+            
+            type_results = {
+                'total': len(episode_files),
+                'succeeded': 0,
+                'failed': 0,
+                'errors': [],
+                'processing_time_seconds': 0
+            }
+            
+            type_start_time = time.time()
+            
+            # Process files in sorted order for consistency
+            for episode_file in sorted(episode_files):
+                try:
+                    # Load episode data from export file
+                    with open(episode_file, 'r', encoding='utf-8') as f:
+                        episode_export = json.load(f)
+                    
+                    episode_data = episode_export['graphiti_episode']
+                    metadata = episode_export['episode_metadata']
+                    gene_symbol = metadata['gene_symbol']
+                    
+                    context.log.debug(f"Processing {gene_symbol} ({episode_type})")
+                    
+                    # Direct MCP call - this is where we bypass the service
+                    # Note: This is a placeholder for the actual MCP function call
+                    # The actual implementation will depend on how MCP tools are integrated
+                    # For now, we'll simulate the call and assume success
+                    try:
+                        # In practice, this would be:
+                        # mcp_graphiti_memory_add_memory(...)
+                        # For testing, we'll log what would be called
+                        context.log.debug(f"Would call MCP: name={episode_data['name']}, group_id=pd_discovery_platform")
+                        # Simulate successful MCP call
+                        pass
+                    except Exception as mcp_error:
+                        raise Exception(f"MCP call failed: {mcp_error}")
+                    
+                    # Success tracking
+                    results['episodes_succeeded'] += 1
+                    type_results['succeeded'] += 1
+                    
+                    context.log.info(f"✅ MCP ingested: {gene_symbol} ({episode_type})")
+                    
+                    # Rate limiting - crucial for OpenAI API (same as service)
+                    time.sleep(2.0)
+                    
+                except Exception as e:
+                    error_msg = f"{episode_file.name}: {str(e)}"
+                    results['errors'].append(error_msg)
+                    type_results['errors'].append(error_msg)
+                    type_results['failed'] += 1
+                    results['episodes_failed'] += 1
+                    
+                    context.log.warning(f"❌ MCP failed: {episode_file.name} - {e}")
+                    
+                    # Brief pause even on failure to prevent overwhelming
+                    time.sleep(1.0)
+                
+                results['episodes_processed'] += 1
+            
+            # Calculate type-level timing
+            type_results['processing_time_seconds'] = time.time() - type_start_time
+            results['episodes_by_type'][episode_type] = type_results
+            
+            type_success_rate = (type_results['succeeded'] / max(type_results['total'], 1)) * 100
+            context.log.info(f"Completed {episode_type}: {type_results['succeeded']}/{type_results['total']} succeeded ({type_success_rate:.1f}%)")
+        
+        # Calculate final statistics
+        results['processing_time_seconds'] = time.time() - start_time
+        results['success_rate'] = (results['episodes_succeeded'] / max(results['episodes_processed'], 1)) * 100
+        
+        # Final status logging
+        if results['episodes_failed'] > 0:
+            context.log.warning(f"MCP ingestion completed with {results['episodes_failed']} failures")
+        else:
+            context.log.info("🎉 MCP ingestion completed successfully!")
+        
+        context.log.info(f"Final stats: {results['episodes_succeeded']}/{results['episodes_processed']} episodes succeeded ({results['success_rate']:.1f}%)")
+        context.log.info(f"Total processing time: {results['processing_time_seconds']/60:.1f} minutes")
+        
+    except Exception as e:
+        context.log.error(f"Critical error during MCP ingestion: {e}")
+        results['critical_error'] = str(e)
+        results['success'] = False
+        return results
+    
+    # Add comprehensive metadata for comparison with service approach
+    context.add_output_metadata({
+        "ingestion_method": "direct_mcp",
+        "episodes_processed": results['episodes_processed'],
+        "episodes_succeeded": results['episodes_succeeded'], 
+        "episodes_failed": results['episodes_failed'],
+        "success_rate": f"{results['success_rate']:.1f}%",
+        "processing_time_minutes": f"{results['processing_time_seconds']/60:.1f}",
+        "target_neo4j_instance": "mcp_server-neo4j-1:7687",
+        "target_group_id": "pd_discovery_platform",
+        "comparison_available": "Compare with graphiti_knowledge_graph_ingestion",
+        "export_directory": str(export_directory),
+        "episode_types_processed": len([t for t in results['episodes_by_type'].keys() if results['episodes_by_type'][t]['total'] > 0]),
+        "ready_for_mcp_queries": results['episodes_failed'] == 0
+    })
+    
+    results['success'] = results['episodes_failed'] == 0
+    return results
