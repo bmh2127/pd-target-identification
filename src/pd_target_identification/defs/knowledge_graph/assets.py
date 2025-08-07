@@ -117,12 +117,12 @@ def gene_profile_episodes(
 
 
 @asset(
-    deps=["gwas_data_with_mappings", "multi_evidence_integrated"],
+    deps=["raw_gwas_data", "multi_evidence_integrated"],
     description="Generate GWAS evidence episodes from genetic association data"
 )
 def gwas_evidence_episodes(
     context: AssetExecutionContext,
-    gwas_data_with_mappings: pd.DataFrame,
+    raw_gwas_data: pd.DataFrame,
     multi_evidence_integrated: pd.DataFrame
 ) -> pd.DataFrame:
     """
@@ -134,7 +134,7 @@ def gwas_evidence_episodes(
     Returns:
         DataFrame with GWAS evidence episodes for genes with variant associations
     """
-    context.log.info(f"Creating GWAS evidence episodes from {len(gwas_data_with_mappings)} variants")
+    context.log.info(f"Creating GWAS evidence episodes from {len(raw_gwas_data)} variants")
     
     episodes = []
     successful_episodes = 0
@@ -142,7 +142,7 @@ def gwas_evidence_episodes(
     
     # Get genes that have GWAS data and are in the integrated analysis
     target_genes = set(multi_evidence_integrated['gene_symbol'].tolist())
-    genes_with_gwas = gwas_data_with_mappings['nearest_gene'].unique()
+    genes_with_gwas = raw_gwas_data['nearest_gene'].unique()
     genes_to_process = [gene for gene in genes_with_gwas if gene in target_genes]
     
     context.log.info(f"Processing GWAS evidence for {len(genes_to_process)} genes")
@@ -150,8 +150,8 @@ def gwas_evidence_episodes(
     for gene_symbol in genes_to_process:
         try:
             # Get GWAS data for this gene
-            gene_gwas_data = gwas_data_with_mappings[
-                gwas_data_with_mappings['nearest_gene'] == gene_symbol
+            gene_gwas_data = raw_gwas_data[
+                raw_gwas_data['nearest_gene'] == gene_symbol
             ]
             
             if len(gene_gwas_data) == 0:
@@ -199,12 +199,12 @@ def gwas_evidence_episodes(
     
     # Add metadata
     context.add_output_metadata({
-        "total_variants": len(gwas_data_with_mappings),
+        "total_variants": len(raw_gwas_data),
         "genes_with_gwas_data": len(genes_to_process),
         "successful_episodes": successful_episodes,
         "failed_episodes": failed_episodes,
         "genome_wide_significant_genes": sum(1 for ep in episodes if ep.get('genome_wide_significant', False)),
-        "min_p_value_overall": float(gwas_data_with_mappings['p_value'].min()) if len(gwas_data_with_mappings) > 0 else None
+        "min_p_value_overall": float(raw_gwas_data['p_value'].min()) if len(raw_gwas_data) > 0 else None
     })
     
     return pd.DataFrame(episodes)

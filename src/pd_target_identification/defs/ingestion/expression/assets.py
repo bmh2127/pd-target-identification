@@ -7,14 +7,14 @@ from ...shared.resources import GTExResource
 
 
 @asset(
-    deps=["gwas_data_with_mappings"],
+    deps=["raw_gwas_data"],
     group_name="data_acquisition",
     compute_kind="api", 
     tags={"source": "gtex", "data_type": "eqtl"}
 )
 def gtex_gene_version_mapping(
     context: AssetExecutionContext,
-    gwas_data_with_mappings: pd.DataFrame,
+    raw_gwas_data: pd.DataFrame,
     gtex: GTExResource
 ) -> pd.DataFrame:
     """
@@ -23,7 +23,7 @@ def gtex_gene_version_mapping(
     context.log.info("Finding correct GTEx gene versions for GWAS genes")
     
     # Get unique base Ensembl IDs from GWAS data (without versions)
-    base_ensembl_ids = gwas_data_with_mappings['ensembl_gene_id'].unique()
+    base_ensembl_ids = raw_gwas_data['ensembl_gene_id'].unique()
     base_ensembl_ids = [eid for eid in base_ensembl_ids if eid != 'N/A']
     
     context.log.info(f"Testing version formats for {len(base_ensembl_ids)} genes")
@@ -256,7 +256,7 @@ def gtex_eqtl_summary(
     return gene_summary
 
 @asset(
-    deps=["gtex_brain_eqtls", "gwas_data_with_mappings"],
+    deps=["gtex_brain_eqtls", "raw_gwas_data"],
     group_name="data_integration",
     compute_kind="python",
     tags={"data_type": "integrated"}
@@ -264,7 +264,7 @@ def gtex_eqtl_summary(
 def gwas_eqtl_integrated(
     context: AssetExecutionContext,
     gtex_brain_eqtls: pd.DataFrame,
-    gwas_data_with_mappings: pd.DataFrame
+    raw_gwas_data: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Integrate GWAS and eQTL data for comprehensive gene analysis
@@ -276,7 +276,7 @@ def gwas_eqtl_integrated(
         return pd.DataFrame()
     
     # Get all GWAS genes (left join approach - keep all GWAS genes even without eQTL)
-    gwas_genes = set(gwas_data_with_mappings['ensembl_gene_id'].unique())
+    gwas_genes = set(raw_gwas_data['ensembl_gene_id'].unique())
     eqtl_genes = set(gtex_brain_eqtls['base_ensembl_id'].unique())
     overlapping_genes = gwas_genes.intersection(eqtl_genes)
     
@@ -289,7 +289,7 @@ def gwas_eqtl_integrated(
     # Process ALL GWAS genes (whether they have eQTL data or not)
     for ensembl_id in gwas_genes:
         # Get GWAS data
-        gwas_subset = gwas_data_with_mappings[gwas_data_with_mappings['ensembl_gene_id'] == ensembl_id]
+        gwas_subset = raw_gwas_data[raw_gwas_data['ensembl_gene_id'] == ensembl_id]
         
         # Get eQTL data
         eqtl_subset = gtex_brain_eqtls[gtex_brain_eqtls['base_ensembl_id'] == ensembl_id]

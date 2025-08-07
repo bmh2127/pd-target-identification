@@ -84,6 +84,29 @@ def raw_gwas_data(
             if unmapped_genes:
                 context.log.warning(f"Genes without complete mapping: {unmapped_genes}")
             
+            # Filter to variants with complete gene mapping
+            context.log.info("Filtering to variants with complete gene mapping...")
+            complete_mapping_data = df[df['has_complete_mapping']].copy()
+            
+            # Sort by p-value (most significant first)
+            complete_mapping_data = complete_mapping_data.sort_values('p_value').reset_index(drop=True)
+            
+            # Add derived fields
+            complete_mapping_data['neg_log10_p'] = -np.log10(complete_mapping_data['p_value'])
+            complete_mapping_data['log_odds_ratio'] = np.log(complete_mapping_data['odds_ratio'])
+            
+            # Calculate significance tiers
+            complete_mapping_data['significance_tier'] = complete_mapping_data['p_value'].apply(
+                lambda p: 'genome_wide' if p < 5e-8 else 'suggestive' if p < 1e-5 else 'nominal'
+            )
+            
+            # Calculate final statistics
+            filtered_count = len(complete_mapping_data)
+            filtered_genes = complete_mapping_data['nearest_gene'].nunique()
+            
+            context.log.info(f"Filtered data: {filtered_count}/{total_variants} variants ({filtered_count/total_variants*100:.1f}%)")
+            context.log.info(f"Filtered genes: {filtered_genes}/{unique_genes_count} genes ({filtered_genes/unique_genes_count*100:.1f}%)")
+            
             context.add_output_metadata({
                 "num_variants": total_variants,
                 "num_unique_genes": unique_genes_count,
@@ -95,6 +118,13 @@ def raw_gwas_data(
                 "gene_entrez_mapping_rate": f"{genes_with_entrez/unique_genes_count*100:.1f}%",
                 "gene_complete_mapping_rate": f"{genes_with_complete/unique_genes_count*100:.1f}%",
                 "variant_complete_mapping_rate": f"{variants_with_complete/total_variants*100:.1f}%",
+                "filtered_variant_count": filtered_count,
+                "filtered_gene_count": filtered_genes,
+                "retention_rate": f"{filtered_count/total_variants*100:.1f}%",
+                "gene_retention_rate": f"{filtered_genes/unique_genes_count*100:.1f}%",
+                "genome_wide_significant": len(complete_mapping_data[complete_mapping_data['significance_tier'] == 'genome_wide']),
+                "mean_neg_log10_p": float(complete_mapping_data['neg_log10_p'].mean()) if filtered_count > 0 else 0,
+                "top_gene": complete_mapping_data.iloc[0]['nearest_gene'] if filtered_count > 0 else "None",
                 "data_source": "GWAS Catalog API + dynamic biorosetta mapping",
                 "unmapped_gene_count": len(unmapped_genes)
             })
@@ -103,7 +133,7 @@ def raw_gwas_data(
             context.log.warning("No GWAS associations retrieved, falling back to mock data")
             raise Exception("No data from API")
         
-        return df
+        return complete_mapping_data
         
     except Exception as e:
         context.log.warning(f"API call failed: {e}, falling back to enhanced mock data")
@@ -155,6 +185,21 @@ def raw_gwas_data(
         genes_with_complete = gene_mapping_df[gene_mapping_df['has_complete_mapping']].shape[0]
         variants_with_complete = len(df[df['has_complete_mapping']])
         
+        # Filter to variants with complete gene mapping (same as real data)
+        complete_mapping_data = df[df['has_complete_mapping']].copy()
+        complete_mapping_data = complete_mapping_data.sort_values('p_value').reset_index(drop=True)
+        
+        # Add derived fields
+        complete_mapping_data['neg_log10_p'] = -np.log10(complete_mapping_data['p_value'])
+        complete_mapping_data['log_odds_ratio'] = np.log(complete_mapping_data['odds_ratio'])
+        complete_mapping_data['significance_tier'] = complete_mapping_data['p_value'].apply(
+            lambda p: 'genome_wide' if p < 5e-8 else 'suggestive' if p < 1e-5 else 'nominal'
+        )
+        
+        # Calculate final statistics
+        filtered_count = len(complete_mapping_data)
+        filtered_genes = complete_mapping_data['nearest_gene'].nunique()
+        
         context.add_output_metadata({
             "num_variants": total_variants,
             "num_unique_genes": unique_genes_count,
@@ -162,64 +207,11 @@ def raw_gwas_data(
             "variants_with_complete_mapping": variants_with_complete,
             "gene_complete_mapping_rate": f"{genes_with_complete/unique_genes_count*100:.1f}%",
             "variant_complete_mapping_rate": f"{variants_with_complete/total_variants*100:.1f}%",
+            "filtered_variant_count": filtered_count,
+            "filtered_gene_count": filtered_genes,
+            "retention_rate": f"{filtered_count/total_variants*100:.1f}%",
             "data_source": "Mock data with dynamic biorosetta mapping (API fallback)"
         })
         
-        return df
+        return complete_mapping_data
 
-@asset(
-    deps=["raw_gwas_data"],
-    group_name="data_processing",
-    compute_kind="python",
-    tags={"data_type": "genetic", "processing": "filter"}
-)
-def gwas_data_with_mappings(
-    context: AssetExecutionContext,
-    raw_gwas_data: pd.DataFrame
-) -> pd.DataFrame:
-    """
-    Filter and process GWAS data to include only variants with complete gene mapping
-    """
-    context.log.info("Processing GWAS data with gene mapping filters")
-    
-    # Filter to variants with complete gene mapping
-    complete_mapping_data = raw_gwas_data[raw_gwas_data['has_complete_mapping']].copy()
-    
-    # Sort by p-value (most significant first)
-    complete_mapping_data = complete_mapping_data.sort_values('p_value').reset_index(drop=True)
-    
-    # Add derived fields
-    complete_mapping_data['neg_log10_p'] = -np.log10(complete_mapping_data['p_value'])
-    complete_mapping_data['log_odds_ratio'] = np.log(complete_mapping_data['odds_ratio'])
-    
-    # Calculate significance tiers
-    complete_mapping_data['significance_tier'] = complete_mapping_data['p_value'].apply(
-        lambda p: 'genome_wide' if p < 5e-8 else 'suggestive' if p < 1e-5 else 'nominal'
-    )
-    
-    original_count = len(raw_gwas_data)
-    filtered_count = len(complete_mapping_data)
-    original_genes = raw_gwas_data['nearest_gene'].nunique()
-    filtered_genes = complete_mapping_data['nearest_gene'].nunique()
-    
-    context.log.info(f"Filtered data: {filtered_count}/{original_count} variants ({filtered_count/original_count*100:.1f}%)")
-    context.log.info(f"Filtered genes: {filtered_genes}/{original_genes} genes ({filtered_genes/original_genes*100:.1f}%)")
-    
-    # Log which genes made it through the filter
-    if filtered_count > 0:
-        genes_included = complete_mapping_data['nearest_gene'].unique()
-        context.log.info(f"Genes with complete mappings: {list(genes_included)}")
-    
-    context.add_output_metadata({
-        "original_variant_count": original_count,
-        "filtered_variant_count": filtered_count,
-        "retention_rate": f"{filtered_count/original_count*100:.1f}%",
-        "original_gene_count": original_genes,
-        "filtered_gene_count": filtered_genes,
-        "gene_retention_rate": f"{filtered_genes/original_genes*100:.1f}%",
-        "genome_wide_significant": len(complete_mapping_data[complete_mapping_data['significance_tier'] == 'genome_wide']),
-        "mean_neg_log10_p": float(complete_mapping_data['neg_log10_p'].mean()) if filtered_count > 0 else 0,
-        "top_gene": complete_mapping_data.iloc[0]['nearest_gene'] if filtered_count > 0 else "None"
-    })
-    
-    return complete_mapping_data

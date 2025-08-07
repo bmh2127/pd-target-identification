@@ -3,7 +3,7 @@
 from dagster import Definitions
 
 # Import individual assets that are working
-from .defs.ingestion.gwas.assets import raw_gwas_data, gwas_data_with_mappings
+from .defs.ingestion.gwas.assets import raw_gwas_data
 from .defs.ingestion.expression.assets import (
     gtex_gene_version_mapping, gtex_brain_eqtls, gtex_eqtl_summary, gwas_eqtl_integrated
 )
@@ -46,7 +46,6 @@ all_assets = [
     
     # GWAS ingestion
     raw_gwas_data,
-    gwas_data_with_mappings,
     
     # Expression/eQTL ingestion
     gtex_gene_version_mapping,

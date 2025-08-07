@@ -930,7 +930,7 @@ def generate_episodes_for_gene(
     # Extract gene-specific data from each DataFrame
     multi_evidence = all_pipeline_data.get('multi_evidence_integrated')
     # gene_mapping will be handled dynamically when needed
-    gwas_data = all_pipeline_data.get('gwas_data_with_mappings')
+    gwas_data = all_pipeline_data.get('raw_gwas_data')
     eqtl_data = all_pipeline_data.get('gtex_brain_eqtls')
     
     if multi_evidence is None:
