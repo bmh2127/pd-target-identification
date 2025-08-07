@@ -6,28 +6,34 @@ from typing import Dict, List
 from ...shared.resources import GTExResource
 
 
+
 @asset(
     deps=["raw_gwas_data"],
     group_name="data_acquisition",
-    compute_kind="api", 
+    compute_kind="api",
     tags={"source": "gtex", "data_type": "eqtl"}
 )
-def gtex_gene_version_mapping(
+def gtex_brain_eqtls(
     context: AssetExecutionContext,
     raw_gwas_data: pd.DataFrame,
     gtex: GTExResource
 ) -> pd.DataFrame:
     """
-    Find the correct versioned Ensembl IDs for our GWAS genes in GTEx
+    Fetch brain eQTL data from GTEx for GWAS genes with integrated version mapping
     """
-    context.log.info("Finding correct GTEx gene versions for GWAS genes")
+    context.log.info("Fetching brain eQTL data from GTEx with version mapping")
     
     # Get unique base Ensembl IDs from GWAS data (without versions)
     base_ensembl_ids = raw_gwas_data['ensembl_gene_id'].unique()
     base_ensembl_ids = [eid for eid in base_ensembl_ids if eid != 'N/A']
     
-    context.log.info(f"Testing version formats for {len(base_ensembl_ids)} genes")
+    if len(base_ensembl_ids) == 0:
+        context.log.warning("No Ensembl IDs found in GWAS data")
+        return pd.DataFrame()
     
+    context.log.info(f"Resolving GTEx versions for {len(base_ensembl_ids)} genes")
+    
+    # Internal version mapping - find working GTEx gene versions
     version_mapping = []
     successful_genes = 0
     
@@ -46,76 +52,23 @@ def gtex_gene_version_mapping(
                 'base_ensembl_id': base_id,
                 'gtex_ensembl_id': best_version_info['version'],
                 'gene_symbol': best_version_info['gene_symbol'],
-                'eqtl_count': best_version_info['eqtl_count'],
-                'tissue_count': best_version_info['tissues'],
-                'has_gtex_data': True
+                'eqtl_count': best_version_info['eqtl_count']
             })
             
             context.log.info(f"  ✅ {base_id} -> {best_version_info['version']} "
-                            f"({best_version_info['eqtl_count']} eQTLs, "
-                            f"{best_version_info['tissues']} tissues)")
+                            f"({best_version_info['eqtl_count']} eQTLs)")
         else:
-            version_mapping.append({
-                'base_ensembl_id': base_id,
-                'gtex_ensembl_id': None,
-                'gene_symbol': None,
-                'eqtl_count': 0,
-                'tissue_count': 0,
-                'has_gtex_data': False
-            })
-            
             context.log.warning(f"  ❌ {base_id}: No working version found")
     
-    df = pd.DataFrame(version_mapping)
-    
-    success_rate = successful_genes / len(base_ensembl_ids) if base_ensembl_ids else 0
-    
-    context.log.info(f"Version mapping results:")
-    context.log.info(f"  Successful: {successful_genes}/{len(base_ensembl_ids)} ({success_rate*100:.1f}%)")
-    
-    if successful_genes > 0:
-        total_eqtls = df[df['has_gtex_data']]['eqtl_count'].sum()
-        avg_tissues = df[df['has_gtex_data']]['tissue_count'].mean()
-        context.log.info(f"  Total eQTLs found: {total_eqtls}")
-        context.log.info(f"  Average tissues per gene: {avg_tissues:.1f}")
-    
-    context.add_output_metadata({
-        "genes_tested": len(base_ensembl_ids),
-        "successful_mappings": successful_genes,
-        "success_rate": f"{success_rate*100:.1f}%",
-        "total_eqtls": int(df[df['has_gtex_data']]['eqtl_count'].sum()),
-        "genes_with_eqtls": list(df[df['has_gtex_data']]['gene_symbol'].dropna())
-    })
-    
-    return df
-
-@asset(
-    deps=["gtex_gene_version_mapping"],
-    group_name="data_acquisition",
-    compute_kind="api",
-    tags={"source": "gtex", "data_type": "eqtl"}
-)
-def gtex_brain_eqtls(
-    context: AssetExecutionContext,
-    gtex_gene_version_mapping: pd.DataFrame,
-    gtex: GTExResource
-) -> pd.DataFrame:
-    """
-    Fetch brain eQTL data from GTEx for mapped genes
-    """
-    context.log.info("Fetching brain eQTL data from GTEx")
-    
-    # Get genes with successful GTEx mappings
-    successful_genes = gtex_gene_version_mapping[gtex_gene_version_mapping['has_gtex_data']]
-    
-    if len(successful_genes) == 0:
-        context.log.warning("No genes with GTEx mappings found")
+    if successful_genes == 0:
+        context.log.warning("No genes found working GTEx versions")
         return pd.DataFrame()
     
-    gtex_ensembl_ids = successful_genes['gtex_ensembl_id'].tolist()
+    # Extract successful GTEx IDs for eQTL fetching
+    gtex_ensembl_ids = [vm['gtex_ensembl_id'] for vm in version_mapping]
     
     context.log.info(f"Fetching brain eQTLs for {len(gtex_ensembl_ids)} genes")
-    context.log.info(f"GTEx IDs: {gtex_ensembl_ids}")
+    context.log.info(f"Version mapping success: {successful_genes}/{len(base_ensembl_ids)} genes")
     
     try:
         # Get brain eQTL data
@@ -123,9 +76,9 @@ def gtex_brain_eqtls(
         
         if len(df) > 0:
             # Add base Ensembl IDs back for easy joining
-            version_mapping = dict(zip(successful_genes['gtex_ensembl_id'], 
-                                     successful_genes['base_ensembl_id']))
-            df['base_ensembl_id'] = df['ensembl_gene_id'].map(version_mapping)
+            gtex_to_base_mapping = {vm['gtex_ensembl_id']: vm['base_ensembl_id'] 
+                                   for vm in version_mapping}
+            df['base_ensembl_id'] = df['ensembl_gene_id'].map(gtex_to_base_mapping)
             
             # Calculate summary statistics
             total_eqtls = len(df)

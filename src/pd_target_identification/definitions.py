@@ -5,7 +5,7 @@ from dagster import Definitions
 # Import individual assets that are working
 from .defs.ingestion.gwas.assets import raw_gwas_data
 from .defs.ingestion.expression.assets import (
-    gtex_gene_version_mapping, gtex_brain_eqtls, gwas_eqtl_integrated
+    gtex_brain_eqtls, gwas_eqtl_integrated
 )
 from .defs.ingestion.literature.assets import (
     pubmed_literature_search, literature_evidence_extraction, literature_gene_summary
@@ -48,7 +48,6 @@ all_assets = [
     raw_gwas_data,
     
     # Expression/eQTL ingestion
-    gtex_gene_version_mapping,
     gtex_brain_eqtls,
     gwas_eqtl_integrated,
     
