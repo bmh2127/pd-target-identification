@@ -316,12 +316,12 @@ def eqtl_evidence_episodes(
 
 
 @asset(
-    deps=["literature_gene_summary", "multi_evidence_integrated"],
+    deps=["literature_analysis", "multi_evidence_integrated"],
     description="Generate literature evidence episodes from publication analysis"
 )
 def literature_evidence_episodes(
     context: AssetExecutionContext,
-    literature_gene_summary: pd.DataFrame,
+    literature_analysis: pd.DataFrame,
     multi_evidence_integrated: pd.DataFrame
 ) -> pd.DataFrame:
     """
@@ -333,7 +333,7 @@ def literature_evidence_episodes(
     Returns:
         DataFrame with literature evidence episodes for genes with publication data
     """
-    context.log.info(f"Creating literature evidence episodes from {len(literature_gene_summary)} gene literature profiles")
+    context.log.info(f"Creating literature evidence episodes from {len(literature_analysis)} gene literature profiles")
     
     episodes = []
     successful_episodes = 0
@@ -341,7 +341,7 @@ def literature_evidence_episodes(
     
     # Get genes that have literature data and are in the integrated analysis
     target_genes = set(multi_evidence_integrated['gene_symbol'].tolist())
-    genes_with_literature = literature_gene_summary['gene_symbol'].unique() if 'gene_symbol' in literature_gene_summary.columns else []
+    genes_with_literature = literature_analysis['gene_symbol'].unique() if 'gene_symbol' in literature_analysis.columns else []
     genes_to_process = [gene for gene in genes_with_literature if gene in target_genes]
     
     context.log.info(f"Processing literature evidence for {len(genes_to_process)} genes")
@@ -349,8 +349,8 @@ def literature_evidence_episodes(
     for gene_symbol in genes_to_process:
         try:
             # Get literature data for this gene
-            gene_lit_data = literature_gene_summary[
-                literature_gene_summary['gene_symbol'] == gene_symbol
+            gene_lit_data = literature_analysis[
+                literature_analysis['gene_symbol'] == gene_symbol
             ]
             
             if len(gene_lit_data) == 0:

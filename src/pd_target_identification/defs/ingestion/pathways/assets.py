@@ -313,7 +313,7 @@ def pathway_network_summary(
     return df
 
 @asset(
-    deps=["gwas_eqtl_integrated", "pathway_network_summary", "literature_gene_summary"],
+    deps=["gwas_eqtl_integrated", "pathway_network_summary", "literature_analysis"],
     group_name="data_integration",
     compute_kind="python",
     tags={"data_type": "integrated"}
@@ -322,7 +322,7 @@ def multi_evidence_integrated(
     context: AssetExecutionContext,
     gwas_eqtl_integrated: pd.DataFrame,
     pathway_network_summary: pd.DataFrame,
-    literature_gene_summary: pd.DataFrame
+    literature_analysis: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Integrate GWAS, eQTL, pathway, and literature evidence for comprehensive gene scoring
@@ -361,9 +361,9 @@ def multi_evidence_integrated(
         integrated_data['pathway_evidence_score'] = 0
     
     # Add literature evidence
-    if len(literature_gene_summary) > 0:
+    if len(literature_analysis) > 0:
         # Merge literature data
-        literature_dict = literature_gene_summary.set_index('gene_symbol').to_dict('index')
+        literature_dict = literature_analysis.set_index('gene_symbol').to_dict('index')
         
         integrated_data['literature_papers_count'] = integrated_data['gene_symbol'].map(
             lambda g: literature_dict.get(g, {}).get('total_papers', 0)

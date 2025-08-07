@@ -7,9 +7,7 @@ from .defs.ingestion.gwas.assets import raw_gwas_data
 from .defs.ingestion.expression.assets import (
     gtex_brain_eqtls, gwas_eqtl_integrated
 )
-from .defs.ingestion.literature.assets import (
-    pubmed_literature_search, literature_evidence_extraction, literature_gene_summary
-)
+from .defs.ingestion.literature.assets import literature_analysis
 from .defs.knowledge_graph.assets import (
     gene_profile_episodes,
     gwas_evidence_episodes,
@@ -52,9 +50,7 @@ all_assets = [
     gwas_eqtl_integrated,
     
     # Literature ingestion
-    pubmed_literature_search,
-    literature_evidence_extraction,
-    literature_gene_summary,
+    literature_analysis,
     
     # Pathways ingestion
     string_protein_interactions,
