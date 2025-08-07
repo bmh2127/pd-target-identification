@@ -34,13 +34,12 @@ from .schema_constants import DEFAULT_GROUP_ID
 # ============================================================================
 
 @asset(
-    deps=["multi_evidence_integrated", "gene_mapping_table"],
+    deps=["multi_evidence_integrated"],
     description="Generate gene profile episodes from integrated target ranking data"
 )
 def gene_profile_episodes(
     context: AssetExecutionContext,
-    multi_evidence_integrated: pd.DataFrame,
-    gene_mapping_table: pd.DataFrame
+    multi_evidence_integrated: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Create gene profile episodes for all genes in the integrated analysis.
@@ -63,18 +62,14 @@ def gene_profile_episodes(
         gene_symbol = gene_row['gene_symbol']
         
         try:
-            # Get gene mapping data if available
-            gene_mapping_data = None
-            if len(gene_mapping_table) > 0:
-                mapping_rows = gene_mapping_table[gene_mapping_table['gene_symbol'] == gene_symbol]
-                if len(mapping_rows) > 0:
-                    gene_mapping_data = mapping_rows.iloc[0].to_dict()
+            # Gene mapping data will be handled dynamically when needed
+            # No static mapping table dependency
             
             # Create gene profile episode
             episode = create_gene_profile_episode(
                 gene_data=gene_row.to_dict(),
                 all_scores=all_scores,
-                gene_mapping_data=gene_mapping_data,
+                gene_mapping_data=None,  # Dynamic mapping handled in episode generators
                 group_id=DEFAULT_GROUP_ID
             )
             

@@ -28,7 +28,7 @@ from .defs.knowledge_graph.mcp_assets import (
     graphiti_mcp_direct_ingestion,
     mcp_ingestion_comparison
 )
-from .defs.ingestion.gene_mapping.assets import gene_mapping_table, gene_mapping_lookup, dynamic_gene_mapping
+from .defs.ingestion.gene_mapping.assets import dynamic_gene_mapping
 from .defs.ingestion.pathways.assets import (
     string_protein_interactions, string_functional_enrichment, pathway_network_summary, multi_evidence_integrated
 )
@@ -42,8 +42,6 @@ from .defs.shared.io_managers import pd_duckdb_io_manager, default_io_manager
 # Combine all working assets
 all_assets = [
     # Gene mapping foundation
-    gene_mapping_table,
-    gene_mapping_lookup,
     dynamic_gene_mapping,
     
     # GWAS ingestion

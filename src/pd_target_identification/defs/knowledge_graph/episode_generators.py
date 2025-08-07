@@ -929,7 +929,7 @@ def generate_episodes_for_gene(
     
     # Extract gene-specific data from each DataFrame
     multi_evidence = all_pipeline_data.get('multi_evidence_integrated')
-    gene_mapping = all_pipeline_data.get('gene_mapping_table')
+    # gene_mapping will be handled dynamically when needed
     gwas_data = all_pipeline_data.get('gwas_data_with_mappings')
     eqtl_data = all_pipeline_data.get('gtex_brain_eqtls')
     
@@ -945,12 +945,9 @@ def generate_episodes_for_gene(
     gene_data = gene_rows.iloc[0].to_dict()
     all_scores = multi_evidence['enhanced_integrated_score'].tolist()
     
-    # Get gene mapping data
+    # Gene mapping data will be handled dynamically when needed
+    # Static gene mapping table has been removed in favor of dynamic mapping
     gene_mapping_data = None
-    if gene_mapping is not None:
-        mapping_rows = gene_mapping[gene_mapping['gene_symbol'] == gene_symbol]
-        if len(mapping_rows) > 0:
-            gene_mapping_data = mapping_rows.iloc[0].to_dict()
     
     # 1. Create gene profile episode (foundation)
     try:
