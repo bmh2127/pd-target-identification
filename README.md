@@ -6,23 +6,24 @@ A **production-ready** comprehensive data pipeline for Parkinson's Disease (PD) 
 
 This platform combines multi-omics data integration with **AI-powered knowledge graph construction** to systematically identify and prioritize potential therapeutic targets for Parkinson's Disease. Built on Dagster's orchestration framework with direct MCP integration, it provides reproducible, scalable data pipelines for biomarker discovery and target validation.
 
-**🎯 Current Status**: **Production Ready** - Successfully processing 81 episodes across multiple evidence types with 542+ knowledge graph nodes.
+**🎯 Current Status**: **Production Ready** - Successfully processing 94 episodes across multiple evidence types with 1,000+ knowledge graph nodes. **Recent Updates (Jan 2025)**: Configuration consolidation for consistent gene discovery + CELLxGENE Census single cell RNA integration + Direct MCP integration for efficient knowledge graph construction.
 
 ## ✨ Key Features
 
 ### 🔄 **Multi-Source Data Integration Pipeline** 
-- **GWAS Data**: GWAS Catalog integration for PD genetic associations
+- **GWAS Data**: GWAS Catalog integration for PD genetic associations (10,000 variant limit)
 - **eQTL Data**: GTEx brain tissue expression quantitative trait loci
+- **Single Cell RNA**: CELLxGENE Census integration for cell type-specific expression validation
 - **Literature Mining**: PubMed therapeutic target evidence extraction
 - **Pathway Analysis**: STRING protein-protein interactions and functional enrichment
-- **Gene Mapping**: Comprehensive gene annotation and identifier standardization
+- **Gene Mapping**: Comprehensive gene annotation and identifier standardization with biorosetta
 
 ### 🧠 **AI-Powered Knowledge Graph** 
 - **Direct MCP Integration**: Efficient knowledge graph construction via Model Context Protocol
 - **Graphiti Engine**: Advanced entity recognition and relationship mapping
 - **Real-time Search**: Semantic search capabilities for biological entities and relationships
 - **Evidence Integration**: Multi-source evidence aggregation with enhanced scoring
-- **542+ Active Nodes**: Rich knowledge graph with genes, evidence, and relationships
+- **1,000+ Active Nodes**: Rich knowledge graph with genes, evidence, and relationships
 
 ### 📊 **Target Prioritization & Results** 
 Current top-ranked therapeutic targets with enhanced integrated scores:
@@ -38,8 +39,15 @@ Current top-ranked therapeutic targets with enhanced integrated scores:
 - **Pipeline Orchestration**: Dagster with asset-based architecture
 - **Data Storage**: DuckDB for intermediate processing, Neo4j for knowledge graph
 - **Knowledge Graph**: Graphiti + MCP direct integration (bypassing service layer)
-- **Graph Database**: Neo4j with 542+ nodes across multiple entity types
+- **Graph Database**: Neo4j with 1,000+ nodes across multiple entity types
 - **Transport**: Server-Sent Events (SSE) for efficient MCP communication
+
+### **MCP Communication & Integration**
+- **SSE Transport**: Server-Sent Events enable efficient real-time communication
+- **Direct Integration**: Bypasses service layer for reduced latency and complexity
+- **Cursor Compatibility**: Works seamlessly with Cursor IDE for development
+- **Claude Desktop Support**: HTTP transport available for Claude Desktop users
+- **Early Stage Technology**: SSE MCP is cutting-edge but stable for production use
 
 ### Project Structure
 ```
@@ -51,11 +59,14 @@ pd-target-identification/
 │   │   │   ├── expression/         # GTEx eQTL analysis  
 │   │   │   ├── gene_mapping/       # Gene annotation mapping
 │   │   │   ├── literature/         # PubMed literature mining
-│   │   │   └── pathways/           # STRING database integration
+│   │   │   ├── pathways/           # STRING database integration
+│   │   │   └── single_cell/        # CELLxGENE Census integration
 │   │   ├── knowledge_graph/        # Knowledge graph construction
 │   │   │   ├── assets.py           # Episode generation assets
 │   │   │   └── mcp_assets.py       # Direct MCP integration
 │   │   └── shared/                 # Resources and configurations
+│   │   │   ├── configs.py          # Centralized configuration classes
+│   │   │   └── resources.py        # Dagster resources
 │   ├── definitions.py              # Complete asset definitions
 │   └── assets.py                   # Legacy asset definitions
 ├── exports/                        # Knowledge graph export files
@@ -70,28 +81,31 @@ pd-target-identification/
 
 ```mermaid
 graph TD
-    A[GWAS Catalog] --> E[Gene Profiles]
-    B[GTEx eQTLs] --> E
-    C[PubMed Literature] --> E
-    D[STRING Pathways] --> E
-    E --> F[Evidence Episodes]
-    F --> G[Graphiti Export]
-    G --> H[MCP Integration]
-    H --> I[Neo4j Knowledge Graph]
-    I --> J[Semantic Search & Analysis]
+    A[GWAS Catalog] --> F[Gene Profiles]
+    B[GTEx eQTLs] --> F
+    C[PubMed Literature] --> F
+    D[STRING Pathways] --> F
+    E[CELLxGENE Census] --> F
+    F --> G[Evidence Episodes]
+    G --> H[Graphiti Export]
+    H --> I[MCP Integration]
+    I --> J[Neo4j Knowledge Graph]
+    J --> K[Semantic Search & Analysis]
 ```
 
 1. **Ingestion Layer** 
    - GWAS: Genome-wide association data for PD risk loci
    - eQTL: Brain-specific expression quantitative trait loci
+   - Single Cell: CELLxGENE Census for cell type-specific expression validation
    - Literature: Target-related evidence from scientific publications
    - Pathways: Protein interactions and functional enrichment
    - Gene Mapping: Standardized identifiers and annotations
 
 2. **Episode Generation** 
    - Gene profiles with multi-evidence integration
-   - Evidence-specific episodes (GWAS, eQTL, literature, pathway)
+   - Evidence-specific episodes (GWAS, eQTL, literature, pathway, single cell)
    - Enhanced integrated scoring (base + evidence contributions)
+   - Cell type-specific validation episodes (neurons, microglia, astrocytes)
    - Structured episode format for knowledge graph ingestion
 
 3. **Knowledge Graph Construction** 
@@ -112,6 +126,7 @@ graph TD
 - Python ≥ 3.12
 - Docker (for Neo4j and MCP services)
 - uv package manager (recommended)
+- **Graphiti MCP Server**: Must be running for knowledge graph functionality
 
 ### Installation
 
@@ -134,6 +149,9 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```bash
 # Start Neo4j and MCP services (ensure Docker is running)
 cd /path/to/graphiti && docker-compose up -d
+
+# Verify Graphiti MCP server is running
+curl http://localhost:8000/health
 ```
 
 4. **Configure environment**
@@ -162,12 +180,13 @@ Navigate to `http://localhost:3000` to access the Dagster web interface.
 
 2. **Run the complete pipeline**
 ```bash
-# Materialize all assets for fresh data
+# Materialize all assets for fresh data (now with improved GWAS configuration)
 dagster asset materialize --select "*"
 
 # Or run specific components
-dagster asset materialize --select "gwas_*"
-dagster asset materialize --select "graphiti_*"
+dagster asset materialize --select "gwas_*"        # GWAS with 10K variant limit
+dagster asset materialize --select "census_*"      # Single cell RNA validation
+dagster asset materialize --select "graphiti_*"    # Knowledge graph construction
 ```
 
 3. **Access the knowledge graph**
@@ -187,14 +206,15 @@ print(f"Found {len(facts)} evidence relationships")
 ## 📊 **Current Data & Results** 
 
 ### **Knowledge Graph Statistics**
-- **Total Nodes**: 542+
-- **Episodes**: 81 across multiple evidence types
+- **Total Nodes**: 1,000+
+- **Episodes**: 94 across multiple evidence types
 - **Entity Types**: Genes, proteins, pathways, evidence scores
 - **Groups**: Multiple knowledge graph groups for different data versions
 
 ### **Integrated Databases** 
 - **GWAS Catalog**: PD genetic associations and risk loci
 - **GTEx v8**: Brain tissue eQTL data (basal ganglia, substantia nigra focus)
+- **CELLxGENE Census**: Single cell RNA-seq data for cell type-specific validation
 - **PubMed**: Literature evidence for therapeutic targets
 - **STRING v11**: Protein-protein interactions and pathway enrichment
 - **Gene Mapping**: HGNC, Ensembl, UniProt identifier standardization
@@ -245,14 +265,35 @@ episodes = get_episodes(group_id="pd_target_discovery", last_n=10)
 ```
 
 ### **Configuration Options**
+- **GWAS Configuration**: Centralized config in `configs.py` (10,000 max variants, 5e-8 p-value threshold)
 - **Group ID Management**: Organize knowledge graphs by project/version
 - **Default Values**: No manual configuration required in Dagster UI
 - **Error Handling**: Robust failure detection and retry logic
 - **Container Coordination**: Smart health checking of MCP services
 
+## ⚙️ **Configuration Management**
+
+### **GWAS Configuration Consolidation** (Updated Jan 2025)
+The platform now uses a **single source of truth** for GWAS configuration:
+
+```python
+# configs.py - Centralized configuration
+class GWASConfig(Config):
+    p_value_threshold: float = 5e-8    # Standard GWAS significance
+    max_variants: int = 10000          # Comprehensive variant discovery
+    populations: List[str] = ["EUR", "EAS"]
+    study_id: str = "PD_2019_meta"
+```
+
+**Benefits:**
+- ✅ **Consistent Results**: No more conflicting hardcoded limits
+- ✅ **Comprehensive Discovery**: 10,000 variants vs previous 50-variant limit
+- ✅ **Modern Dagster**: Uses Config classes as function parameters
+- ✅ **Gene Cleaning**: Automatic deduplication of genes with formatting issues
+
+**Expected Impact**: Significantly more genes discovered (50+ instead of 22) for comprehensive analysis.
+
 ## 🧪 Testing & Validation 
-
-
 
 ### **Run Tests**
 ```bash
@@ -296,7 +337,8 @@ from pd_target_identification.defs import *
 # Run end-to-end pipeline
 result = materialize([
     raw_gwas_data,
-    gtex_brain_eqtls, 
+    gtex_brain_eqtls,
+    census_expression_validation,
     literature_evidence_extraction,
     multi_evidence_integrated,
     graphiti_mcp_direct_ingestion
@@ -321,12 +363,14 @@ print(f"Pipeline completed: {result.success}")
 
 ## 🚀 **Future Roadmap**
 
-### **🧬 Phase Next: Single Cell RNA Integration** 
-- **Mission Brief**: `SINGLE_CELL_RNA_INTEGRATION_MISSION.md`
-- **Target Databases**: Human Cell Atlas, Allen Brain Atlas, BRAIN Initiative
-- **Focus**: Cell type-specific evidence (neurons, microglia, astrocytes)
-- **Integration**: Following established Dagster asset patterns
-- **Enhancement**: Cell type-specific target scoring contributions
+### **✅ Phase Completed: Single Cell RNA Integration** 
+- **Status**: **IMPLEMENTED** - CELLxGENE Census integration active
+- **Databases**: CELLxGENE Census with 1.8M+ cells from human brain tissue
+- **Cell Types**: Neurons, microglia, astrocytes validation
+- **Integration**: Dagster asset patterns with configurable batch processing
+- **Enhancement**: Census contribution to enhanced integrated scoring
+
+### **🧬 Phase Next: Advanced Single Cell Analysis**
 
 ### **Planned Enhancements**
 - **Multi-modal Integration**: Proteomics, metabolomics data sources
@@ -344,12 +388,13 @@ enhanced_integrated_score = base_score + (
     eqtl_contribution +           # Expression regulation evidence  
     literature_contribution +     # Published research evidence
     pathway_contribution +        # Functional network evidence
-    # Future: scRNA_contribution  # Single cell evidence
+    census_contribution +         # Single cell expression validation
 )
 ```
 
 ### **Current Validation Results**
-- **Multi-source Convergence**: Targets validated across genetic, expression, and literature evidence
+- **Multi-source Convergence**: Targets validated across genetic, expression, literature, and single cell evidence
+- **Cell Type Specificity**: Single cell validation in neurons, microglia, and astrocytes
 - **Clinical Relevance**: Top targets have active therapeutic development programs
 - **Network Context**: Pathway analysis confirms biological relevance
 - **Literature Support**: Extensive publication evidence for target prioritization
@@ -379,6 +424,32 @@ enhanced_integrated_score = base_score + (
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 🔧 **Troubleshooting**
+
+### **Common Issues**
+
+**GWAS Gene Count Variations**
+- ✅ **Fixed**: Configuration consolidation ensures consistent gene discovery
+- **Previous Issue**: Different runs returned 22 vs 27 genes due to conflicting `max_variants` settings
+- **Solution**: All configurations now use centralized `configs.py` with 10,000 variant limit
+
+**Configuration Conflicts**
+```bash
+# If you see inconsistent results, verify configuration:
+python -c "from pd_target_identification.defs.shared.configs import GWASConfig; print(GWASConfig().max_variants)"
+# Should output: 10000
+```
+
+**Gene Cleaning Issues**
+- Platform automatically removes genes with formatting issues (e.g., carriage returns)
+- This may slightly reduce final gene counts but improves data quality
+
+**MCP Server Issues**
+- **Ensure Graphiti MCP server is running**: `docker-compose up -d` in graphiti directory
+- **Check SSE transport**: Verify `http://localhost:8000/sse` is accessible
+- **Cursor IDE compatibility**: SSE MCP works seamlessly with Cursor
+- **Claude Desktop users**: May need HTTP transport configuration
+
 ## 🆘 Support & Documentation
 
 ### **Key Resources**
@@ -386,6 +457,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **Phase 7 Results**: `PHASE_7_COMPLETION_SUMMARY.md`
 - **Next Mission**: `SINGLE_CELL_RNA_INTEGRATION_MISSION.md`
 - **Research Queries**: `research_queries.cypher`
+- **Configuration Guide**: See "Configuration Management" section above
+- **MCP Integration Guide**: `MCP_INTEGRATION_GUIDE.md`
 
 ### **Support Channels**
 - GitHub Issues for bug reports and feature requests
