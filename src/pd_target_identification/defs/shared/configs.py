@@ -25,7 +25,8 @@ class GWASConfig(Config):
     study_id: str = "PD_2019_meta"
     populations: List[str] = ["EUR", "EAS"]
     p_value_threshold: float = 5e-8
-    max_variants: int = 10000
+    # max_variants: int = 10000
+    max_variants: int = 100
 
 class ExpressionConfig(Config):
     """Configuration for expression data"""

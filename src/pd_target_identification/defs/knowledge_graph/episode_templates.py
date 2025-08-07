@@ -384,6 +384,105 @@ def get_pathway_evidence_template() -> Dict[str, Any]:
         }
     }
 
+def get_census_validation_template() -> Dict[str, Any]:
+    """
+    Census validation evidence episode template for single-cell expression validation.
+    
+    Captures single-cell RNA sequencing validation data from CellxGene Census
+    specifically focused on Parkinson's disease brain tissue samples. Provides
+    tissue-level biological evidence supporting genes as therapeutically relevant
+    targets by confirming expression in disease-relevant cell types and brain regions.
+    
+    The template emphasizes validation metrics including cell counts, expression
+    levels, and regional specificity to enable assessment of target expression
+    in disease-relevant contexts, complementing genetic and literature evidence.
+    
+    Returns:
+        Dictionary containing census validation structure with fields for:
+        - Gene identity and validation context
+        - Cell population statistics and expression metrics
+        - Brain region and cell type specificity
+        - Validation quality and confidence assessment
+        - Integration with multi-evidence scoring
+        - Cross-validation and quality metrics
+    """
+    return {
+        "census_validation": {
+            # Gene identity and validation context
+            "gene": "",                            # Target gene symbol
+            "ensembl_gene_id": "",                # Gene identifier
+            
+            # Validation status and outcome
+            "validation_status": "pending",        # VALIDATED, NOT_DETECTED, INSUFFICIENT_DATA
+            "expression_detected": False,          # Boolean validation result
+            "validation_confidence": ConfidenceLevel.LOW.value,
+            
+            # Cell population statistics
+            "total_pd_cells": 0,                  # Total PD brain cells analyzed
+            "pd_cells_expressing": 0,             # Cells with detectable expression
+            "expression_percentage": 0.0,         # Percentage of cells expressing
+            "control_cells_analyzed": 0,          # Control brain cells (if available)
+            "control_expression_percentage": 0.0, # Control expression rate
+            
+            # Expression level metrics
+            "mean_expression_level": 0.0,         # Mean expression in expressing cells
+            "median_expression_level": 0.0,       # Median expression level
+            "expression_variance": 0.0,           # Expression variability
+            "max_expression_level": 0.0,          # Peak expression observed
+            "expression_threshold": 0.0,          # Detection threshold used
+            
+            # Tissue and cell type specificity
+            "brain_regions": 0,                   # Number of brain regions detected
+            "cell_types": 0,                      # Number of cell types detected
+            "primary_brain_regions": [],          # Main regions with expression
+            "primary_cell_types": [],             # Main cell types with expression
+            
+            # Disease relevance assessment
+            "substantia_nigra_expression": False,  # Expression in SN (PD-relevant)
+            "basal_ganglia_expression": False,    # Expression in BG (motor control)
+            "dopaminergic_neuron_expression": False, # Dopamine neuron specificity
+            "microglia_expression": False,        # Neuroinflammation relevance
+            "astrocyte_expression": False,        # Glial cell involvement
+            
+            # Validation quality metrics
+            "sample_size_adequacy": "unknown",    # Statistical power assessment
+            "technical_replication": "unknown",  # Technical validation quality
+            "cross_dataset_consistency": "unknown", # Consistency across studies
+            "data_completeness": 0.0,            # Fraction of expected data present
+            
+            # Scoring and integration
+            "scoring_bonus": 0,                   # Points added to integrated score
+            "evidence_weight": 1.0,               # Weight in multi-evidence integration
+            "validation_strength": "weak",       # Overall validation assessment
+            "clinical_relevance": "unknown",     # Disease mechanism relevance
+            
+            # Comparative analysis
+            "disease_vs_control_fold_change": 0.0, # PD vs control expression ratio
+            "statistical_significance": None,     # P-value for expression difference
+            "effect_size": 0.0,                  # Magnitude of expression difference
+            "confidence_interval": [],           # Statistical confidence bounds
+            
+            # Technical metadata
+            "census_version": "",                 # CellxGene Census version used
+            "analysis_date": None,               # When validation was performed
+            "sequencing_platform": "",          # Technology used (10X, etc.)
+            "normalization_method": "",         # Expression normalization approach
+            
+            # Cross-validation and external support
+            "external_validation_available": False, # Independent validation exists
+            "literature_support": False,         # Published expression evidence
+            "protein_atlas_concordance": "unknown", # HPA expression agreement
+            "gtex_concordance": "unknown",       # GTEx bulk tissue agreement
+            
+            # Summary and interpretation
+            "evidence_summary": "",              # Human-readable validation summary
+            "validation_implications": "",       # Therapeutic target implications
+            "research_recommendations": "",      # Suggested follow-up studies
+            "limitations_noted": []              # Known validation limitations
+        }
+    }
+
+
 def get_integration_template() -> Dict[str, Any]:
     """
     Multi-evidence integration episode template for comprehensive target assessment.
@@ -603,6 +702,7 @@ def get_template_by_evidence_type(evidence_type: str) -> Dict[str, Any]:
         "eqtl": get_eqtl_evidence_template,
         "literature": get_literature_evidence_template,
         "pathway": get_pathway_evidence_template,
+        "census_validation": get_census_validation_template,
         "integration": get_integration_template,
         "relationship": get_relationship_template
     }
@@ -625,6 +725,7 @@ def get_all_template_types() -> List[str]:
         "eqtl",
         "literature",
         "pathway",
+        "census_validation",
         "integration",
         "relationship"
     ]
@@ -650,6 +751,7 @@ def validate_template_structure(template: Dict[str, Any], template_type: str) ->
         "eqtl": ["regulatory_evidence"],
         "literature": ["literature_evidence"],
         "pathway": ["functional_evidence"],
+        "census_validation": ["census_validation"],
         "integration": ["therapeutic_target"],
         "relationship": ["relationship"]
     }

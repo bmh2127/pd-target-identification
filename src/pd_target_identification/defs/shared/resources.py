@@ -44,7 +44,7 @@ class GWASCatalogResource(ConfigurableResource):
             'merge_status': 0
         }
     
-    def get_pd_associations(self, p_value_threshold: float = 5e-8, max_variants: int = 100) -> pd.DataFrame:
+    def get_pd_associations(self, p_value_threshold: float, max_variants: int) -> pd.DataFrame:
         """
         Fetch Parkinson's disease associations from GWAS Catalog with complete variant data
         """

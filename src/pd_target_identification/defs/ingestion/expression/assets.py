@@ -275,44 +275,62 @@ def gwas_eqtl_integrated(
         context.log.warning("No eQTL data available for integration")
         return pd.DataFrame()
     
-    # Get genes with both GWAS and eQTL data
+    # Get all GWAS genes (left join approach - keep all GWAS genes even without eQTL)
     gwas_genes = set(gwas_data_with_mappings['ensembl_gene_id'].unique())
     eqtl_genes = set(gtex_brain_eqtls['base_ensembl_id'].unique())
     overlapping_genes = gwas_genes.intersection(eqtl_genes)
     
+    context.log.info(f"GWAS genes: {len(gwas_genes)}, eQTL genes: {len(eqtl_genes)}")
     context.log.info(f"Gene overlap: {len(overlapping_genes)} genes have both GWAS and eQTL data")
+    context.log.info(f"GWAS-only genes: {len(gwas_genes - eqtl_genes)} genes have GWAS data without eQTL")
     
     integrated_data = []
     
-    for ensembl_id in overlapping_genes:
+    # Process ALL GWAS genes (whether they have eQTL data or not)
+    for ensembl_id in gwas_genes:
         # Get GWAS data
         gwas_subset = gwas_data_with_mappings[gwas_data_with_mappings['ensembl_gene_id'] == ensembl_id]
         
         # Get eQTL data
         eqtl_subset = gtex_brain_eqtls[gtex_brain_eqtls['base_ensembl_id'] == ensembl_id]
         
-        if len(gwas_subset) > 0 and len(eqtl_subset) > 0:
+        if len(gwas_subset) > 0:  # Process all genes with GWAS data
             gene_symbol = gwas_subset['nearest_gene'].iloc[0]
             
-            # GWAS summary
+            # GWAS summary (always available)
             min_gwas_p = gwas_subset['p_value'].min()
             max_gwas_or = gwas_subset['odds_ratio'].max()
             gwas_variant_count = len(gwas_subset)
             
-            # eQTL summary
-            eqtl_count = len(eqtl_subset)
-            eqtl_tissues = eqtl_subset['tissue_id'].nunique()
-            min_eqtl_p = eqtl_subset['p_value'].min()
-            max_effect_size = eqtl_subset['effect_size'].abs().max()
-            
-            # Tissue-specific eQTL flags
-            has_sn_eqtl = any(eqtl_subset['tissue_id'].str.contains('Substantia_nigra', case=False, na=False))
-            has_bg_eqtl = any(eqtl_subset['tissue_id'].str.contains('basal_ganglia', case=False, na=False))
-            
-            # Composite score: genetic association strength × genetic regulation strength
-            integrated_score = (
-                -np.log10(min_gwas_p) * -np.log10(min_eqtl_p) * max_effect_size
-            )
+            # eQTL summary (conditional on eQTL data availability)
+            if len(eqtl_subset) > 0:
+                # Gene has both GWAS and eQTL data
+                eqtl_count = len(eqtl_subset)
+                eqtl_tissues = eqtl_subset['tissue_id'].nunique()
+                min_eqtl_p = eqtl_subset['p_value'].min()
+                max_effect_size = eqtl_subset['effect_size'].abs().max()
+                
+                # Tissue-specific eQTL flags
+                has_sn_eqtl = any(eqtl_subset['tissue_id'].str.contains('Substantia_nigra', case=False, na=False))
+                has_bg_eqtl = any(eqtl_subset['tissue_id'].str.contains('basal_ganglia', case=False, na=False))
+                
+                # Composite score: genetic association strength × genetic regulation strength
+                integrated_score = (
+                    -np.log10(min_gwas_p) * -np.log10(min_eqtl_p) * max_effect_size
+                )
+                evidence_types = 2  # GWAS + eQTL
+            else:
+                # Gene has GWAS data only (no eQTL data available)
+                eqtl_count = 0
+                eqtl_tissues = 0
+                min_eqtl_p = None
+                max_effect_size = 0.0
+                has_sn_eqtl = False
+                has_bg_eqtl = False
+                
+                # Score based on GWAS data only
+                integrated_score = -np.log10(min_gwas_p) * max_gwas_or  # GWAS significance × effect size
+                evidence_types = 1  # GWAS only
             
             integrated_data.append({
                 'ensembl_gene_id': ensembl_id,
@@ -326,7 +344,7 @@ def gwas_eqtl_integrated(
                 'eqtl_max_effect_size': max_effect_size,
                 'has_substantia_nigra_eqtl': has_sn_eqtl,
                 'has_basal_ganglia_eqtl': has_bg_eqtl,
-                'evidence_types': 2,  # GWAS + eQTL
+                'evidence_types': evidence_types,
                 'integrated_score': integrated_score
             })
     
@@ -337,7 +355,12 @@ def gwas_eqtl_integrated(
         df = df.sort_values('integrated_score', ascending=False).reset_index(drop=True)
         
         context.log.info(f"Integration results:")
-        context.log.info(f"  Genes with both GWAS and eQTL: {len(df)}")
+        context.log.info(f"  Total integrated genes: {len(df)}")
+        
+        gwas_eqtl_genes = len(df[df['evidence_types'] >= 2])
+        gwas_only_genes = len(df[df['evidence_types'] == 1])
+        context.log.info(f"  Genes with both GWAS and eQTL: {gwas_eqtl_genes}")
+        context.log.info(f"  Genes with GWAS only: {gwas_only_genes}")
         
         sn_genes = len(df[df['has_substantia_nigra_eqtl']])
         context.log.info(f"  Genes with substantia nigra eQTLs: {sn_genes}")

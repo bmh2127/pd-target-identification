@@ -15,6 +15,7 @@ from datetime import datetime
 from dagster import asset, AssetExecutionContext, RetryPolicy, Field
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from .schema_constants import DEFAULT_GROUP_ID
 
 
 def check_mcp_container_running() -> bool:
@@ -41,7 +42,7 @@ async def call_mcp_add_memory(
     episode_body: str,
     source: str = "text",
     source_description: str = "",
-    group_id: str = "pd_discovery_platform"
+    group_id: str = DEFAULT_GROUP_ID
 ) -> Dict[str, Any]:
     """
     Call the existing Graphiti MCP container's add_memory tool via SSE.
@@ -160,7 +161,7 @@ def run_async_in_dagster(async_func):
     config_schema={
         "group_id": Field(
             str, 
-            default_value="pd_target_discovery_mcp_test",
+            default_value=DEFAULT_GROUP_ID,
             description="Neo4j group ID for organizing the knowledge graph data"
         ),
         "check_existing": Field(
@@ -185,15 +186,15 @@ def graphiti_mcp_direct_ingestion(
     - Container health checking and graceful failure handling
     
     Default Configuration:
-    - group_id: "pd_target_discovery_mcp_test" (can be overridden)
+    - group_id: "pd_target_discovery" (can be overridden)
     - check_existing: True (can be overridden)
     
     No manual configuration required - just click "Materialize"!
     
     Available group options:
-    - "pd_target_discovery": Service approach data (426 nodes)
-    - "pd_discovery_platform": MCP test data (105 nodes)  
-    - "pd_target_discovery_mcp_test": New test group (recommended)
+    - "pd_target_discovery": Primary group (recommended, matches episode generation)
+    - "pd_discovery_platform": Alternative test group  
+    - "pd_target_discovery_mcp_test": Legacy test group
     
     Args:
         context: Dagster execution context with logging
@@ -210,7 +211,7 @@ def graphiti_mcp_direct_ingestion(
         config = getattr(context, 'op_config', {})
     
     # Config now has default values, so these should always be available
-    target_group_id = config.get("group_id", "pd_target_discovery_mcp_test") 
+    target_group_id = config.get("group_id", DEFAULT_GROUP_ID) 
     check_existing = config.get("check_existing", True)
     
     async def process_episodes_async():
@@ -241,6 +242,11 @@ def graphiti_mcp_direct_ingestion(
         export_summary = graphiti_export
         export_dir = Path(export_summary["export_directory"])
         
+        # DEBUG: Log the complete received export_summary structure
+        context.log.info(f"🔍 DEBUG: Received export_summary keys: {list(export_summary.keys())}")
+        context.log.info(f"🔍 DEBUG: episodes_by_type keys: {list(export_summary.get('episodes_by_type', {}).keys())}")
+        context.log.info(f"🔍 DEBUG: Total episodes in summary: {export_summary.get('total_episodes', 'UNKNOWN')}")
+        
         context.log.info(f"📂 Processing exports from: {export_dir}")
         
         results = {
@@ -253,6 +259,29 @@ def graphiti_mcp_direct_ingestion(
             "processing_time": datetime.now().isoformat()
         }
         
+        # DEBUGGER: Set up remote debugging (only once) - DISABLED FOR NOW
+        # import debugpy
+        debug_enabled = False
+        # try:
+        #     if not debugpy.is_client_connected():
+        #         debugpy.listen(("localhost", 5678))
+        #         context.log.info("🐛 Debugger listening on localhost:5678 - connect your debugger now")
+        #         debugpy.wait_for_client()
+        #         context.log.info("🐛 Debugger connected, continuing execution")
+        #         debug_enabled = True
+        #     else:
+        #         context.log.info("🐛 Debugger already connected")
+        #         debug_enabled = True
+        # except Exception as e:
+        #     context.log.info(f"🐛 Debug setup failed ({str(e)}), continuing without debugging")
+        #     debug_enabled = False
+        
+        # DEBUG: Log the complete export structure  
+        context.log.info(f"🔍 DEBUG: Export summary contains {len(export_summary.get('episodes_by_type', {}))} episode types")
+        for ep_type, ep_data in export_summary.get("episodes_by_type", {}).items():
+            file_count = len(ep_data.get("files", []))
+            context.log.info(f"🔍 DEBUG: {ep_type} has {file_count} files")
+            
         # Process each episode type from the export structure
         for episode_type, type_data in export_summary.get("episodes_by_type", {}).items():
             context.log.info(f"📄 Processing {episode_type} episodes")
@@ -276,7 +305,62 @@ def graphiti_mcp_direct_ingestion(
                         episode_data = episode_wrapper['graphiti_episode']
                         results["total_episodes"] += 1
                         
+                        # Ensure episode_body is a JSON string (comprehensive type conversion)
+                        original_type = type(episode_data['episode_body'])
+                        
+                        if not isinstance(episode_data['episode_body'], str):
+                            try:
+                                if isinstance(episode_data['episode_body'], (dict, list)):
+                                    # Convert dict/list to JSON string
+                                    episode_data['episode_body'] = json.dumps(episode_data['episode_body'])
+                                    context.log.info(f"🔄 Converted episode body from {original_type.__name__} to JSON string")
+                                elif episode_data['episode_body'] is None:
+                                    # Handle None values
+                                    episode_data['episode_body'] = "{}"
+                                    context.log.warning(f"⚠️ Converted None episode body to empty JSON object")
+                                else:
+                                    # Convert any other type to string
+                                    episode_data['episode_body'] = str(episode_data['episode_body'])
+                                    context.log.warning(f"⚠️ Converted episode body from {original_type.__name__} to string")
+                            except Exception as e:
+                                context.log.error(f"❌ Failed to convert episode body from {original_type.__name__}: {e}")
+                                # Fallback to empty JSON object
+                                episode_data['episode_body'] = "{}"
+                        
+                        # Additional validation: ensure it's valid JSON if it should be
+                        if episode_data.get('source') == 'json':
+                            try:
+                                # Test if it's valid JSON by parsing and re-dumping
+                                json.loads(episode_data['episode_body'])
+                                # WORKAROUND: Change source from 'json' to episode type to prevent auto-parsing
+                                episode_data['source'] = episode_type
+                                context.log.info(f"🔄 Changed source from 'json' to '{episode_type}' to prevent auto-parsing")
+                            except json.JSONDecodeError as e:
+                                context.log.error(f"❌ Invalid JSON in episode body: {e}")
+                                # Try to fix common JSON issues or fallback
+                                episode_data['episode_body'] = "{}"
+                                episode_data['source'] = episode_type
+                        
+                        # DEBUG: Log episode details before sending to MCP
+                        context.log.info(f"🔍 DEBUG: About to send episode '{episode_data['name']}' (type: {episode_type})")
+                        context.log.info(f"🔍 DEBUG: Episode body length: {len(episode_data['episode_body'])} chars")
+                        context.log.info(f"🔍 DEBUG: Episode source: {episode_data['source']}")
+                        context.log.info(f"🔍 DEBUG: Episode source_description: {episode_data['source_description']}")
+                        context.log.info(f"🔍 DEBUG: Target group_id: {target_group_id}")
+                        context.log.info(f"🔍 DEBUG: Episode body preview: {episode_data['episode_body'][:100]}...")
+                        context.log.info(f"🔍 DEBUG: Episode data keys: {list(episode_data.keys())}")
+                        context.log.info(f"🔍 DEBUG: Episode body type: {type(episode_data['episode_body'])}")
+                        
                         try:
+                            # DEBUGGER: Set breakpoint for episode processing (if debugging enabled)
+                            if debug_enabled:
+                                debugpy.breakpoint()  # This will pause execution here for debugging
+                            
+                            # FINAL validation before MCP call
+                            context.log.info(f"🔍 FINAL CHECK: episode_body type before MCP call: {type(episode_data['episode_body'])}")
+                            context.log.info(f"🔍 FINAL CHECK: episode_body is string: {isinstance(episode_data['episode_body'], str)}")
+                            context.log.info(f"🔍 FINAL CHECK: episode_body preview: {episode_data['episode_body'][:100]}...")
+                            
                             # Call MCP add_memory tool with configured group_id
                             mcp_result = await call_mcp_add_memory(
                                 name=episode_data['name'],
@@ -286,14 +370,36 @@ def graphiti_mcp_direct_ingestion(
                                 group_id=target_group_id
                             )
                             
-                            # Check for errors in the MCP result
-                            if hasattr(mcp_result, 'error') or (isinstance(mcp_result, dict) and 'error' in mcp_result):
-                                error_msg = getattr(mcp_result, 'error', mcp_result.get('error', 'Unknown error'))
-                                context.log.error(f"❌ MCP call failed for {episode_data['name']}: {error_msg}")
+                            # DEBUG: Log MCP result details
+                            context.log.info(f"🔍 DEBUG: MCP result for '{episode_data['name']}': {str(mcp_result)[:200]}...")
+                            
+                            # Check for errors in the MCP result (multiple error formats)
+                            is_error = False
+                            error_msg = ""
+                            
+                            # Check for isError flag (MCP tool format)
+                            if hasattr(mcp_result, 'isError') and mcp_result.isError:
+                                is_error = True
+                                # Extract error from content if available
+                                if hasattr(mcp_result, 'content') and mcp_result.content:
+                                    error_msg = str(mcp_result.content[0].text) if mcp_result.content else "MCP tool error"
+                                else:
+                                    error_msg = "MCP tool returned error"
+                            # Check for direct error attribute
+                            elif hasattr(mcp_result, 'error'):
+                                is_error = True
+                                error_msg = str(mcp_result.error)
+                            # Check for error in dict format
+                            elif isinstance(mcp_result, dict) and 'error' in mcp_result:
+                                is_error = True
+                                error_msg = str(mcp_result.get('error', 'Unknown error'))
+                            
+                            if is_error:
+                                context.log.error(f"❌ MCP call failed for {episode_data['name']}: {error_msg[:300]}...")
                                 results["failed_episodes"] += 1
                                 results["errors"].append({
                                     "episode": episode_data['name'],
-                                    "error": str(error_msg)
+                                    "error": error_msg[:500]  # Truncate long error messages
                                 })
                             else:
                                 context.log.info(f"✅ Successfully ingested: {episode_data['name']}")

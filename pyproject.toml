@@ -28,6 +28,7 @@ dependencies = [
     "numpy>=1.24.0",
     "cellxgene-census>=1.17.0",
     "psutil>=7.0.0",
+    "debugpy>=1.8.15",
 ]
 [project.optional-dependencies]
 dev = [

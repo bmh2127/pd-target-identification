@@ -1,5 +1,7 @@
 from dagster import asset, AssetExecutionContext
 import pandas as pd
+from .episode_generators import create_census_validation_episode
+from .schema_constants import DEFAULT_GROUP_ID
 
 @asset(
     deps=["census_expression_validation"],
@@ -22,37 +24,25 @@ def census_validation_episodes(
     
     for _, row in census_expression_validation.iterrows():
         if row['expression_detected']:  # Only create episodes for validated genes
-            episode_name = f"{row['gene_symbol']}_census_validation"
-            
-            episode_content = f"""
-Gene: {row['gene_symbol']}
-Evidence Type: Single Cell RNA Expression Validation
-Data Source: CellxGene Census (Parkinson's disease brain tissue)
-
-Validation Results:
-- PD Brain Cells Analyzed: {int(row['total_pd_cells'])}
-- Cells Expressing Gene: {int(row['pd_cells_expressing'])} ({row['pd_cells_expressing']/row['total_pd_cells']*100:.1f}%)
-- Mean Expression Level: {row['mean_pd_expression']:.3f}
-- Brain Regions Detected: {int(row['brain_regions'])}
-- Cell Types Detected: {int(row['cell_types'])}
-- Validation Status: VALIDATED
-
-Single-cell RNA sequencing validation confirms {row['gene_symbol']} expression 
-in Parkinson's disease brain tissue. This provides tissue-level biological evidence 
-supporting the gene as a therapeutically relevant target, complementing genetic 
-association and literature evidence with direct molecular validation.
-
-Census Validation adds +{10 if row['expression_detected'] else 0} points to integrated scoring.
-"""
-            
-            # Create episode in same format as other episode assets
-            episode_data = {
-                'name': episode_name,
-                'episode_body': episode_content.strip(),
-                'source': 'census_validation',
-                'source_description': 'CellxGene Census single-cell validation',
-                'group_id': 'pd_target_identification'
+            # Prepare census data for the generator function
+            census_data = {
+                'expression_detected': row['expression_detected'],
+                'total_pd_cells': row['total_pd_cells'],
+                'pd_cells_expressing': row['pd_cells_expressing'],
+                'mean_pd_expression': row['mean_pd_expression'],
+                'brain_regions': row['brain_regions'],
+                'cell_types': row['cell_types'],
+                'scoring_bonus': 10 if row['expression_detected'] else 0
             }
+            
+            # Create episode using the standardized generator function
+            episode_data = create_census_validation_episode(
+                gene_symbol=row['gene_symbol'],
+                census_data=census_data,
+                group_id=DEFAULT_GROUP_ID
+            )
+            
+            episode_name = episode_data['name']
             
             episodes.append({
                 'gene_symbol': row['gene_symbol'],

@@ -23,6 +23,238 @@ from .schema_constants import (
 )
 
 
+def _format_episode_as_readable_string(episode_data: Dict[str, Any], episode_name: str) -> str:
+    """
+    Convert episode data dictionary to human-readable string format.
+    
+    Transforms structured episode data into descriptive text format similar to
+    the working census_validation format, preventing JSON parsing issues.
+    """
+    # Determine episode type from episode name
+    if 'Gene_Profile' in episode_name:
+        return _format_gene_profile_string(episode_data)
+    elif 'GWAS_Evidence' in episode_name:
+        return _format_gwas_evidence_string(episode_data)
+    elif 'eQTL_Evidence' in episode_name:
+        return _format_eqtl_evidence_string(episode_data)
+    elif 'Literature_Evidence' in episode_name:
+        return _format_literature_evidence_string(episode_data)
+    elif 'Pathway_Evidence' in episode_name:
+        return _format_pathway_evidence_string(episode_data)
+    elif 'Integration' in episode_name:
+        return _format_integration_string(episode_data)
+    else:
+        # Generic formatting for unknown types
+        return _format_generic_string(episode_data, episode_name)
+
+
+def _format_gene_profile_string(data: Dict[str, Any]) -> str:
+    """Format gene profile data as human-readable string."""
+    gene_data = data.get('gene', {})
+    gene = gene_data.get('symbol', 'Unknown')
+    score = gene_data.get('enhanced_integrated_score', 0)
+    confidence = gene_data.get('confidence_level', 'unknown')
+    priority = gene_data.get('therapeutic_priority', 'unknown')
+    
+    return f"""Gene: {gene}
+Evidence Type: Gene Profile Analysis
+Data Source: PD Target Discovery Pipeline
+
+Gene Profile Summary:
+- Enhanced Integrated Score: {score:.2f}
+- Confidence Level: {confidence}
+- Therapeutic Priority: {priority}
+- Evidence Types: {gene_data.get('evidence_types', 0)}
+- GWAS Variants: {gene_data.get('gwas_variant_count', 0)}
+- eQTL Count: {gene_data.get('eqtl_count', 0)}
+- Literature Papers: {gene_data.get('literature_papers_count', 0)}
+- Protein Interactions: {gene_data.get('interaction_count', 0)}
+- Pathway Memberships: {gene_data.get('pathway_count', 0)}
+
+Strong Literature Evidence: {gene_data.get('has_strong_literature_evidence', False)}
+Brain Region Specificity: {'Yes' if gene_data.get('has_substantia_nigra_eqtl') or gene_data.get('has_basal_ganglia_eqtl') else 'No'}
+Validation Status: {gene_data.get('validation_status', 'pending')}
+
+This gene profile integrates multiple evidence types to assess therapeutic potential
+for Parkinson's disease treatment, with higher scores indicating stronger evidence."""
+
+
+def _format_gwas_evidence_string(data: Dict[str, Any]) -> str:
+    """Format GWAS evidence data as human-readable string."""
+    gwas_data = data.get('genetic_association', {})
+    gene = gwas_data.get('gene', 'Unknown')
+    variant_count = gwas_data.get('variant_count', 0)
+    min_p = gwas_data.get('min_p_value', 1.0)
+    gws = gwas_data.get('genome_wide_significant', False)
+    
+    return f"""Gene: {gene}
+Evidence Type: GWAS Genetic Association
+Data Source: Genome-wide association studies
+
+Genetic Association Summary:
+- Associated Variants: {variant_count}
+- Minimum P-value: {min_p:.2e}
+- Genome-wide Significance: {'Yes' if gws else 'No'}
+- Maximum Odds Ratio: {gwas_data.get('max_odds_ratio', 'N/A')}
+- Populations Studied: {', '.join(gwas_data.get('populations_studied', ['EUR']))}
+- Significance Level: {'Genome-wide significant' if gws else 'Suggestive'}
+
+Evidence Summary: {gwas_data.get('evidence_summary', 'No summary available')}
+
+GWAS evidence provides genetic validation for disease association,
+with genome-wide significant variants offering strongest support for
+therapeutic target prioritization."""
+
+
+def _format_eqtl_evidence_string(data: Dict[str, Any]) -> str:
+    """Format eQTL evidence data as human-readable string."""
+    eqtl_data = data.get('regulatory_evidence', {})
+    gene = eqtl_data.get('gene', 'Unknown')
+    eqtl_count = eqtl_data.get('eqtl_count', 0)
+    tissue_count = eqtl_data.get('tissue_count', 0)
+    
+    return f"""Gene: {gene}
+Evidence Type: eQTL Regulatory Evidence
+Data Source: Expression quantitative trait loci studies
+
+Regulatory Evidence Summary:
+- eQTL Associations: {eqtl_count}
+- Tissues Analyzed: {tissue_count}
+- Minimum P-value: {eqtl_data.get('min_p_value', 'N/A')}
+- Maximum Effect Size: {eqtl_data.get('max_effect_size', 'N/A')}
+- Substantia Nigra eQTL: {'Yes' if eqtl_data.get('has_substantia_nigra_eqtl') else 'No'}
+- Basal Ganglia eQTL: {'Yes' if eqtl_data.get('has_basal_ganglia_eqtl') else 'No'}
+- Brain Specificity: {eqtl_data.get('brain_specificity', 'unknown')}
+
+Evidence Summary: {eqtl_data.get('evidence_summary', 'No summary available')}
+
+eQTL evidence demonstrates genetic regulation of gene expression,
+with brain-specific eQTLs providing strongest support for neurological
+target relevance and druggability assessment."""
+
+
+def _format_literature_evidence_string(data: Dict[str, Any]) -> str:
+    """Format literature evidence data as human-readable string."""
+    lit_data = data.get('literature_evidence', {})
+    gene = lit_data.get('gene', 'Unknown')
+    total_papers = lit_data.get('total_papers', 0)
+    therapeutic_papers = lit_data.get('therapeutic_target_papers', 0)
+    
+    return f"""Gene: {gene}
+Evidence Type: Literature Evidence Analysis
+Data Source: PubMed biomedical literature
+
+Literature Evidence Summary:
+- Total Publications: {total_papers}
+- Therapeutic Target Papers: {therapeutic_papers}
+- Clinical Papers: {lit_data.get('clinical_papers', 0)}
+- Literature Evidence Score: {lit_data.get('literature_evidence_score', 0):.1f}
+- Strong Literature Evidence: {'Yes' if lit_data.get('has_strong_literature_evidence') else 'No'}
+- Research Momentum: {lit_data.get('research_momentum', 'unknown')}
+
+Publication Timeline: {lit_data.get('publication_timeline_summary', 'Not analyzed')}
+Key Research Areas: {lit_data.get('key_research_areas', 'Not specified')}
+
+Literature evidence assesses research depth and therapeutic potential
+based on scientific publications, clinical studies, and research trends."""
+
+
+def _format_pathway_evidence_string(data: Dict[str, Any]) -> str:
+    """Format pathway evidence data as human-readable string."""
+    pathway_data = data.get('functional_evidence', {})
+    gene = pathway_data.get('gene', 'Unknown')
+    interaction_count = pathway_data.get('interaction_count', 0)
+    pathway_count = pathway_data.get('pathway_count', 0)
+    
+    return f"""Gene: {gene}
+Evidence Type: Pathway and Functional Evidence
+Data Source: Protein interaction and pathway databases
+
+Functional Evidence Summary:
+- Protein Interactions: {interaction_count}
+- Pathway Memberships: {pathway_count}
+- Degree Centrality: {pathway_data.get('degree_centrality', 'N/A')}
+- Pathway Evidence Score: {pathway_data.get('pathway_evidence_score', 0):.1f}
+- Dopamine Pathway Involvement: {'Yes' if pathway_data.get('dopamine_pathway_involvement') else 'No'}
+- Functional Coherence: {pathway_data.get('functional_coherence', 'unknown')}
+
+Key Pathways: {pathway_data.get('key_pathways', 'Not specified')}
+Mechanism Summary: {pathway_data.get('mechanism_summary', 'Not analyzed')}
+
+Pathway evidence evaluates functional relevance through protein interactions
+and biological pathway memberships, indicating druggability potential."""
+
+
+def _format_integration_string(data: Dict[str, Any]) -> str:
+    """Format integration evidence data as human-readable string."""
+    target_data = data.get('therapeutic_target', {})
+    gene = target_data.get('gene', 'Unknown')
+    enhanced_score = target_data.get('enhanced_integrated_score', 0)
+    confidence = target_data.get('confidence_level', 'unknown')
+    priority = target_data.get('therapeutic_priority', 'unknown')
+    
+    return f"""Gene: {gene}
+Evidence Type: Multi-Evidence Integration
+Data Source: Integrated analysis of all evidence types
+
+Therapeutic Target Assessment:
+- Enhanced Integrated Score: {enhanced_score:.2f}
+- Confidence Level: {confidence}
+- Therapeutic Priority: {priority}
+- Evidence Types Integrated: {target_data.get('evidence_types', 0)}
+- Development Stage: {target_data.get('development_stage', 'discovery')}
+- Target Classification: {target_data.get('target_classification', 'unknown')}
+
+Evidence Convergence: {target_data.get('evidence_convergence', 0):.2f}
+Validation Strength: {target_data.get('validation_strength', 0):.2f}
+Data Completeness: {target_data.get('data_completeness', 0):.2f}
+
+Target Summary: {target_data.get('target_summary', 'No summary available')}
+Key Evidence Highlights: {'; '.join(target_data.get('key_evidence_highlights', ['None']))}
+
+Integration analysis combines genetic, regulatory, literature, and functional
+evidence to provide comprehensive therapeutic target prioritization."""
+
+
+def _format_generic_string(data: Dict[str, Any], episode_name: str) -> str:
+    """Generic formatting for unknown episode types."""
+    return f"""Episode: {episode_name}
+Evidence Type: Unknown/Generic
+Data Source: Automated data processing
+
+Content Summary:
+{json.dumps(data, indent=2, ensure_ascii=False)}
+
+This episode contains structured data that has been automatically
+converted to human-readable format for knowledge graph ingestion."""
+
+
+def _determine_source_type_from_episode_name(episode_name: str) -> str:
+    """
+    Determine the appropriate source type based on episode name.
+    
+    Maps episode names to specific source types to prevent JSON auto-parsing
+    by the Graphiti MCP client.
+    """
+    if 'Gene_Profile' in episode_name:
+        return 'gene_profile'
+    elif 'GWAS_Evidence' in episode_name:
+        return 'gwas_evidence'
+    elif 'eQTL_Evidence' in episode_name:
+        return 'eqtl_evidence'
+    elif 'Literature_Evidence' in episode_name:
+        return 'literature_evidence'
+    elif 'Pathway_Evidence' in episode_name:
+        return 'pathway_evidence'
+    elif 'Integration' in episode_name:
+        return 'integration'
+    elif 'Census_Validation' in episode_name:
+        return 'census_validation'
+    else:
+        # Default to episode type, not "json"
+        return 'text'
+
+
 def validate_gene_data(gene_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """
     Validate gene data structure and content for episode creation.
@@ -356,8 +588,9 @@ def validate_episode_structure(episode: Dict[str, Any]) -> Tuple[bool, List[str]
         if not any(keyword in episode_name.lower() for keyword in ['gene', 'gwas', 'eqtl', 'literature', 'pathway', 'integration']):
             warnings.append(f"Episode name '{episode_name}' doesn't indicate content type")
     
-    # Episode body validation - must be JSON serializable
+    # Episode body validation - format depends on source type
     episode_body = episode.get('episode_body')
+    source = episode.get('source', '')
     if episode_body is not None:
         try:
             if isinstance(episode_body, dict):
@@ -365,24 +598,38 @@ def validate_episode_structure(episode: Dict[str, Any]) -> Tuple[bool, List[str]
                 json.dumps(episode_body)
                 warnings.append("episode_body should be JSON string, not dict")
             elif isinstance(episode_body, str):
-                # Validate it's valid JSON
-                parsed = json.loads(episode_body)
-                
-                # Check for reasonable content
-                if not parsed:
-                    warnings.append("episode_body contains empty JSON")
-                elif len(str(episode_body)) > 50000:  # Very large episode
-                    warnings.append(f"episode_body is very large ({len(str(episode_body))} chars)")
+                # Only validate JSON format if source is 'json'
+                if source == 'json':
+                    # Validate it's valid JSON
+                    parsed = json.loads(episode_body)
+                    
+                    # Check for reasonable content
+                    if not parsed:
+                        warnings.append("episode_body contains empty JSON")
+                    elif len(str(episode_body)) > 50000:  # Very large episode
+                        warnings.append(f"episode_body is very large ({len(str(episode_body))} chars)")
+                else:
+                    # For non-JSON sources, just check length and basic content
+                    if len(episode_body.strip()) == 0:
+                        warnings.append("episode_body is empty")
+                    elif len(str(episode_body)) > 50000:  # Very large episode
+                        warnings.append(f"episode_body is very large ({len(str(episode_body))} chars)")
             else:
-                errors.append("episode_body must be JSON string or dict")
+                errors.append("episode_body must be string or dict")
                 
         except (TypeError, ValueError, json.JSONDecodeError) as e:
-            errors.append(f"episode_body must be valid JSON: {e}")
+            # Only fail JSON validation if source type requires JSON
+            if source == 'json':
+                errors.append(f"episode_body must be valid JSON: {e}")
+            else:
+                warnings.append(f"episode_body JSON validation skipped for source type '{source}': {e}")
     
     # Source validation
     source = episode.get('source', '')
-    if source and source not in ['json', 'text', 'message']:
-        warnings.append(f"Unusual source type '{source}' (common types: json, text, message)")
+    allowed_sources = ['json', 'text', 'message', 'gene_profile', 'gwas_evidence', 'eqtl_evidence', 
+                      'literature_evidence', 'pathway_evidence', 'integration', 'census_validation']
+    if source and source not in allowed_sources:
+        warnings.append(f"Unusual source type '{source}' (allowed types: {', '.join(allowed_sources)})")
     
     # Source description validation
     source_desc = episode.get('source_description', '')
@@ -446,22 +693,24 @@ def safe_episode_creation(
         if not safe_name:
             safe_name = f"Episode_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # Ensure episode_body is properly formatted JSON string
+        # Convert episode data to human-readable string format
         if isinstance(episode_data, dict):
-            episode_body = json.dumps(episode_data, ensure_ascii=False, separators=(',', ':'))
+            episode_body = _format_episode_as_readable_string(episode_data, safe_name)
         elif isinstance(episode_data, str):
-            # Validate it's valid JSON
-            json.loads(episode_data)
+            # If already a string, use as-is (might already be human-readable)
             episode_body = episode_data
         else:
-            # Convert other types to JSON
-            episode_body = json.dumps({'data': str(episode_data)})
+            # Convert other types to string
+            episode_body = str(episode_data)
+        
+        # Determine appropriate source type based on episode name
+        source_type = _determine_source_type_from_episode_name(safe_name)
         
         # Create episode structure
         episode = {
             "name": safe_name,
             "episode_body": episode_body,
-            "source": DEFAULT_SOURCE,
+            "source": source_type,
             "source_description": source_desc or DEFAULT_SOURCE_DESCRIPTION
         }
         
@@ -523,8 +772,8 @@ def _create_fallback_episode(episode_name: str, errors: List[str], source_desc: 
     
     return {
         "name": fallback_name,
-        "episode_body": json.dumps(fallback_data),
-        "source": DEFAULT_SOURCE,
+        "episode_body": str(fallback_data),
+        "source": "text",
         "source_description": f"Fallback for failed {source_desc}"
     }
 

@@ -3,8 +3,9 @@ from dagster import asset, AssetExecutionContext
 import pandas as pd
 import numpy as np
 from ...shared.resources import GWASCatalogResource
+from ...shared.configs import GWASConfig
 from ..gene_mapping.assets import map_genes_dynamically, clean_gene_symbol
-from typing import Dict
+
 
 @asset(
     group_name="data_acquisition",
@@ -13,17 +14,22 @@ from typing import Dict
 )
 def raw_gwas_data(
     context: AssetExecutionContext, 
+    config: GWASConfig,
     gwas_catalog: GWASCatalogResource
 ) -> pd.DataFrame:
     """
     Fetch real GWAS data from GWAS Catalog API with dynamic gene mapping
     """
-    p_value_threshold = 5e-8  # Standard GWAS significance threshold
+    # Use configuration values from config parameter instead of hardcoded ones
+    p_value_threshold = config.p_value_threshold
+    max_variants = config.max_variants
+    
     context.log.info(f"Fetching PD GWAS data with p-value threshold: {p_value_threshold}")
+    context.log.info(f"Max variants to retrieve: {max_variants}")
     
     try:
-        # Fetch GWAS data using enhanced resource
-        df = gwas_catalog.get_pd_associations(p_value_threshold, max_variants=50)
+        # Fetch GWAS data using enhanced resource with config values
+        df = gwas_catalog.get_pd_associations(p_value_threshold, max_variants=max_variants)
         context.log.info(f"Retrieved {len(df)} associations from GWAS Catalog")
         
         if len(df) > 0:
@@ -66,7 +72,7 @@ def raw_gwas_data(
             # Calculate variant-level statistics
             variants_with_complete = len(df[df['has_complete_mapping']])
             
-            context.log.info(f"Gene mapping results:")
+            context.log.info("Gene mapping results:")
             context.log.info(f"  Total unique genes: {unique_genes_count}")
             context.log.info(f"  Genes with Ensembl ID: {genes_with_ensembl}/{unique_genes_count} ({genes_with_ensembl/unique_genes_count*100:.1f}%)")
             context.log.info(f"  Genes with Entrez ID: {genes_with_entrez}/{unique_genes_count} ({genes_with_entrez/unique_genes_count*100:.1f}%)")
@@ -77,9 +83,6 @@ def raw_gwas_data(
             unmapped_genes = gene_mapping_df[~gene_mapping_df['has_complete_mapping']]['gene_symbol'].tolist()
             if unmapped_genes:
                 context.log.warning(f"Genes without complete mapping: {unmapped_genes}")
-            
-            # Save the gene mapping data as metadata
-            mapping_summary = gene_mapping_df.groupby('has_complete_mapping').size().to_dict()
             
             context.add_output_metadata({
                 "num_variants": total_variants,

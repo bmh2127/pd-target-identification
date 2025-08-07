@@ -30,7 +30,7 @@ def pubmed_literature_search(
     
     # Get gene symbols from GWAS/eQTL integrated data (top candidates first)
     # Sort by integrated score to prioritize top candidates
-    top_genes = gwas_eqtl_integrated.nlargest(15, 'integrated_score')  # Focus on top candidates
+    top_genes = gwas_eqtl_integrated.nlargest(40, 'integrated_score')  # Focus on top candidates
     gene_symbols = top_genes['gene_symbol'].tolist()
     
     context.log.info(f"Searching literature for {len(gene_symbols)} genes: {gene_symbols}")

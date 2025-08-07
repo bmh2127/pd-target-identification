@@ -20,6 +20,7 @@ dependencies = [
     "biorosetta>=0.3.2",
     "create-fastapi-app>=0.4.4",
     "mcp>=1.12.3",
+    "debugpy>=1.8.15",
 ]
 [project.optional-dependencies]
 dev = [

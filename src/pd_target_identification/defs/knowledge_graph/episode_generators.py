@@ -16,7 +16,8 @@ from .episode_templates import (
     get_gwas_evidence_template,
     get_eqtl_evidence_template,
     get_literature_evidence_template,
-    get_pathway_evidence_template
+    get_pathway_evidence_template,
+    get_census_validation_template
 )
 from .schema_validation import safe_episode_creation, validate_gene_data
 from .schema_utilities import (
@@ -664,6 +665,112 @@ def generate_literature_future_directions(literature_data: Dict[str, Any]) -> st
         recommendations.append("expand research scope based on identified gaps")
     
     return "; ".join(recommendations[:3]) + "."
+
+
+def create_census_validation_episode(
+    gene_symbol: str,
+    census_data: Dict[str, Any],
+    group_id: str = DEFAULT_GROUP_ID
+) -> Dict[str, Any]:
+    """
+    Create census validation episode from single-cell expression validation data.
+    
+    Transforms CellxGene Census validation data for a specific gene into a comprehensive
+    single-cell validation episode including cell counts, expression levels, brain region
+    specificity, and disease relevance assessment.
+    
+    Args:
+        gene_symbol: Target gene symbol
+        census_data: Dictionary containing census validation results
+        group_id: Graphiti group identifier
+        
+    Returns:
+        Census validation episode ready for Graphiti ingestion
+    """
+    template = get_census_validation_template()
+    gene_symbol = normalize_gene_symbol(gene_symbol)
+    
+    if not census_data:
+        print(f"No census data available for {gene_symbol}")
+        template['census_validation']['gene'] = gene_symbol
+        template['census_validation']['evidence_summary'] = f"No census validation data found for {gene_symbol}"
+    else:
+        # Populate census validation data
+        census_evidence = template['census_validation']
+        census_evidence['gene'] = gene_symbol
+        
+        # Validation status and basic metrics
+        census_evidence['validation_status'] = 'VALIDATED' if census_data.get('expression_detected', False) else 'NOT_DETECTED'
+        census_evidence['expression_detected'] = bool(census_data.get('expression_detected', False))
+        
+        # Cell population statistics
+        census_evidence['total_pd_cells'] = int(census_data.get('total_pd_cells', 0))
+        census_evidence['pd_cells_expressing'] = int(census_data.get('pd_cells_expressing', 0))
+        
+        # Calculate expression percentage
+        total_cells = census_evidence['total_pd_cells']
+        expressing_cells = census_evidence['pd_cells_expressing']
+        if total_cells > 0:
+            census_evidence['expression_percentage'] = (expressing_cells / total_cells) * 100
+        else:
+            census_evidence['expression_percentage'] = 0.0
+        
+        # Expression level metrics
+        census_evidence['mean_expression_level'] = float(census_data.get('mean_pd_expression', 0.0))
+        
+        # Tissue and cell type specificity
+        census_evidence['brain_regions'] = int(census_data.get('brain_regions', 0))
+        census_evidence['cell_types'] = int(census_data.get('cell_types', 0))
+        
+        # Scoring integration
+        census_evidence['scoring_bonus'] = int(census_data.get('scoring_bonus', 10 if census_data.get('expression_detected', False) else 0))
+        
+        # Generate comprehensive evidence summary
+        if census_evidence['expression_detected']:
+            summary = f"""Gene: {gene_symbol}
+Evidence Type: Single Cell RNA Expression Validation
+Data Source: CellxGene Census (Parkinson's disease brain tissue)
+
+Validation Results:
+- PD Brain Cells Analyzed: {census_evidence['total_pd_cells']}
+- Cells Expressing Gene: {census_evidence['pd_cells_expressing']} ({census_evidence['expression_percentage']:.1f}%)
+- Mean Expression Level: {census_evidence['mean_expression_level']:.3f}
+- Brain Regions Detected: {census_evidence['brain_regions']}
+- Cell Types Detected: {census_evidence['cell_types']}
+- Validation Status: VALIDATED
+
+Single-cell RNA sequencing validation confirms {gene_symbol} expression 
+in Parkinson's disease brain tissue. This provides tissue-level biological evidence 
+supporting the gene as a therapeutically relevant target, complementing genetic 
+association and literature evidence with direct molecular validation.
+
+Census Validation adds +{census_evidence['scoring_bonus']} points to integrated scoring."""
+        else:
+            summary = f"Census validation for {gene_symbol}: No significant expression detected in PD brain tissue."
+        
+        census_evidence['evidence_summary'] = summary.strip()
+        
+        # Additional validation assessments
+        if census_evidence['expression_percentage'] > 50:
+            census_evidence['validation_strength'] = "strong"
+        elif census_evidence['expression_percentage'] > 20:
+            census_evidence['validation_strength'] = "moderate"
+        else:
+            census_evidence['validation_strength'] = "weak"
+        
+        # Set analysis metadata
+        census_evidence['analysis_date'] = datetime.now().isoformat()
+        census_evidence['data_completeness'] = 1.0  # Census data is typically complete
+    
+    episode_name = f"Census_Validation_{gene_symbol}"
+    source_description = f"CellxGene Census single-cell validation for {gene_symbol}"
+    
+    return safe_episode_creation(
+        episode_name=episode_name,
+        episode_data=template,
+        source_desc=source_description,
+        group_id=group_id
+    )
 
 
 def create_pathway_evidence_episode(
