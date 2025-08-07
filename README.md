@@ -168,13 +168,21 @@ dagster asset materialize --select "graphiti_*"  # Knowledge graph
 ### Access Knowledge Graph
 
 ```python
-from mcp_graphiti_memory import search_memory_nodes, search_memory_facts
+import asyncio
+from pd_target_identification.defs.knowledge_graph.mcp_assets import (
+    call_mcp_get_episodes
+)
 
-# Find therapeutic targets
-targets = search_memory_nodes("SNCA LRRK2 therapeutic target")
+# Get recent episodes from knowledge graph
+async def get_target_data():
+    episodes = await call_mcp_get_episodes(
+        group_id="pd_target_discovery", 
+        last_n=10
+    )
+    return episodes
 
-# Query evidence relationships
-facts = search_memory_facts("enhanced integrated score clinical trials")
+# Run async function
+result = asyncio.run(get_target_data())
 ```
 
 ## 📊 Current Results
@@ -223,14 +231,23 @@ def graphiti_mcp_direct_ingestion(context, graphiti_export):
 
 ### Search & Query Capabilities
 ```python
-# Semantic search
-nodes = search_memory_nodes("therapeutic targets drug development")
+import asyncio
+from pd_target_identification.defs.knowledge_graph.mcp_assets import (
+    call_mcp_add_memory,
+    call_mcp_get_episodes
+)
 
-# Relationship queries
-facts = search_memory_facts("LRRK2 kinase inhibitor clinical trials")
+# Add new episode to knowledge graph
+async def add_episode(name, content, group_id="pd_target_discovery"):
+    return await call_mcp_add_memory(
+        name=name,
+        episode_body=content,
+        group_id=group_id
+    )
 
-# Episode management
-episodes = get_episodes(group_id="pd_target_discovery", last_n=10)
+# Get episodes from specific group
+async def get_episodes(group_id="pd_target_discovery", last_n=10):
+    return await call_mcp_get_episodes(group_id=group_id, last_n=last_n)
 ```
 
 ### Configuration Features
@@ -272,44 +289,49 @@ python validate_knowledge_graph.py
 dagster asset materialize --select "graphiti_mcp_direct_ingestion"
 ```
 
-## 📈 **Usage Examples**
+## 📈 Usage Examples
 
-### **Target Analysis Workflow**
+### Target Analysis Workflow
 ```python
-from mcp_graphiti_memory import search_memory_nodes, search_memory_facts, get_episodes
+import asyncio
+from pd_target_identification.defs.knowledge_graph.mcp_assets import (
+    call_mcp_get_episodes
+)
 
-# 1. Find top therapeutic targets
-targets = search_memory_nodes("high priority therapeutic targets enhanced score")
-for target in targets:
-    print(f"{target['name']}: {target['summary']}")
+# Analyze recent target discoveries
+async def analyze_targets():
+    # Get recent episodes from knowledge graph
+    episodes = await call_mcp_get_episodes(
+        group_id="pd_target_discovery", 
+        last_n=20
+    )
+    
+    # Process episode data
+    for episode in episodes.get('content', []):
+        name = episode.get('name', 'N/A')
+        content = episode.get('episode_body', 'N/A')[:100]
+        print(f"Episode: {name}")
+        print(f"Content: {content}...")
+    
+    return episodes
 
-# 2. Query specific target evidence
-snca_facts = search_memory_facts("SNCA alpha-synuclein therapeutic target")
-for fact in snca_facts:
-    print(f"Evidence: {fact['fact']}")
-
-# 3. Get recent analysis episodes
-recent_episodes = get_episodes(group_id="pd_target_discovery_enhanced", last_n=5)
-for episode in recent_episodes:
-    print(f"Episode: {episode['name']} - {episode['source_description']}")
+# Run analysis
+result = asyncio.run(analyze_targets())
 ```
 
-### **Custom Analysis Pipeline**
+### Custom Pipeline Execution
 ```python
 from dagster import materialize
 from pd_target_identification.defs import *
 
-# Run end-to-end pipeline
+# Run complete pipeline
 result = materialize([
     raw_gwas_data,
     gtex_brain_eqtls,
     census_expression_validation,
     literature_evidence_extraction,
-    multi_evidence_integrated,
     graphiti_mcp_direct_ingestion
 ])
-
-print(f"Pipeline completed: {result.success}")
 ```
 
 ## 🔍 **Monitoring & Observability**
