@@ -176,84 +176,6 @@ def gtex_brain_eqtls(
             'position', 'base_ensembl_id'
         ])
 
-@asset(
-    deps=["gtex_brain_eqtls"],
-    group_name="data_processing",
-    compute_kind="python",
-    tags={"data_type": "eqtl", "processing": "analyze"}
-)
-def gtex_eqtl_summary(
-    context: AssetExecutionContext,
-    gtex_brain_eqtls: pd.DataFrame
-) -> pd.DataFrame:
-    """
-    Summarize eQTL data by gene and tissue
-    """
-    context.log.info("Summarizing GTEx eQTL data")
-    
-    if len(gtex_brain_eqtls) == 0:
-        context.log.warning("No eQTL data to summarize")
-        return pd.DataFrame()
-    
-    # Summarize by gene
-    gene_summary = gtex_brain_eqtls.groupby('gene_symbol').agg({
-        'tissue_id': ['count', 'nunique'],
-        'p_value': 'min',
-        'effect_size': ['mean', 'max', 'std'],
-        'variant_id': 'nunique'
-    }).round(4)
-    
-    # Flatten column names
-    gene_summary.columns = [
-        'total_eqtls', 'tissues_with_eqtls', 'min_p_value',
-        'mean_effect_size', 'max_effect_size', 'effect_size_std', 'unique_variants'
-    ]
-    
-    gene_summary = gene_summary.reset_index()
-    
-    # Add tissue-specific indicators
-    gene_summary['has_substantia_nigra_eqtl'] = gene_summary['gene_symbol'].isin(
-        gtex_brain_eqtls[gtex_brain_eqtls['tissue_id'].str.contains('Substantia_nigra', case=False, na=False)]['gene_symbol']
-    )
-    
-    gene_summary['has_basal_ganglia_eqtl'] = gene_summary['gene_symbol'].isin(
-        gtex_brain_eqtls[gtex_brain_eqtls['tissue_id'].str.contains('basal_ganglia', case=False, na=False)]['gene_symbol']
-    )
-    
-    # Calculate eQTL strength score (combination of effect size and significance)
-
-    gene_summary['eqtl_strength_score'] = gene_summary.apply(
-        lambda row: robust_eqtl_score(row['min_p_value'], row['max_effect_size']), 
-        axis=1
-    )
-    
-    # Sort by eQTL strength
-    gene_summary = gene_summary.sort_values('eqtl_strength_score', ascending=False).reset_index(drop=True)
-    
-    context.log.info(f"eQTL summary results:")
-    context.log.info(f"  Total genes with brain eQTLs: {len(gene_summary)}")
-    
-    sn_genes = len(gene_summary[gene_summary['has_substantia_nigra_eqtl']])
-    bg_genes = len(gene_summary[gene_summary['has_basal_ganglia_eqtl']])
-    
-    context.log.info(f"  Genes with substantia nigra eQTLs: {sn_genes}")
-    context.log.info(f"  Genes with basal ganglia eQTLs: {bg_genes}")
-    
-    # Log top genes
-    if len(gene_summary) > 0:
-        top_genes = gene_summary.head(5)[['gene_symbol', 'eqtl_strength_score', 'tissues_with_eqtls']]
-        context.log.info(f"Top genes by eQTL strength: {top_genes.to_dict('records')}")
-    
-    context.add_output_metadata({
-        "genes_with_brain_eqtls": len(gene_summary),
-        "genes_with_substantia_nigra_eqtls": sn_genes,
-        "genes_with_basal_ganglia_eqtls": bg_genes,
-        "mean_eqtls_per_gene": float(gene_summary['total_eqtls'].mean()),
-        "mean_tissues_per_gene": float(gene_summary['tissues_with_eqtls'].mean()),
-        "top_gene_by_strength": gene_summary.iloc[0]['gene_symbol'] if len(gene_summary) > 0 else "None"
-    })
-    
-    return gene_summary
 
 @asset(
     deps=["gtex_brain_eqtls", "raw_gwas_data"],
@@ -380,7 +302,3 @@ def gwas_eqtl_integrated(
     
     return df
 
-def robust_eqtl_score(p_value, effect_size, cap_threshold=1e-100):
-    capped_p = np.maximum(p_value, cap_threshold)
-    log_p_score = -np.log(capped_p)
-    return log_p_score * np.abs(effect_size)
