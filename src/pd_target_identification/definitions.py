@@ -28,7 +28,7 @@ from .defs.knowledge_graph.mcp_assets import (
 )
 from .defs.ingestion.gene_mapping.assets import dynamic_gene_mapping
 from .defs.ingestion.pathways.assets import (
-    string_protein_interactions, string_functional_enrichment, pathway_network_summary, multi_evidence_integrated
+    string_protein_interactions, string_functional_enrichment, multi_evidence_integrated
 )
 from .defs.ingestion.single_cell.assets import census_expression_validation
 from .defs.integration.enhanced_scoring import enhanced_scoring_with_census
@@ -55,7 +55,6 @@ all_assets = [
     # Pathways ingestion
     string_protein_interactions,
     string_functional_enrichment,
-    pathway_network_summary,
     
     # Final integration (now includes literature)
     multi_evidence_integrated,

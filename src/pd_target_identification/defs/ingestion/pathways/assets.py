@@ -177,143 +177,9 @@ def string_functional_enrichment(
             'category', 'term', 'description', 'p_value', 'fdr', 'proteins_in_term'
         ])
 
-@asset(
-    deps=["string_protein_interactions", "string_functional_enrichment"],
-    group_name="data_processing",
-    compute_kind="python",
-    tags={"data_type": "pathways", "processing": "analyze"}
-)
-def pathway_network_summary(
-    context: AssetExecutionContext,
-    string_protein_interactions: pd.DataFrame,
-    string_functional_enrichment: pd.DataFrame
-) -> pd.DataFrame:
-    """
-    Summarize pathway and network data by gene with fixed pathway assignment
-    """
-    context.log.info("Summarizing pathway and network data by gene")
-    
-    gene_summaries = []
-    
-    if len(string_protein_interactions) > 0:
-        # Analyze network properties for each gene
-        # Get unique gene symbols from the interactions
-        all_gene_symbols = set()
-        all_gene_symbols.update(string_protein_interactions['gene_a'].dropna())
-        all_gene_symbols.update(string_protein_interactions['gene_b'].dropna())
-        all_gene_symbols.discard('')  # Remove empty strings
-        
-        for gene_symbol in all_gene_symbols:
-            if gene_symbol not in [g['gene_symbol'] for g in gene_summaries]:
-                
-                # Count interactions for this gene
-                gene_interactions = string_protein_interactions[
-                    (string_protein_interactions['gene_a'] == gene_symbol) |
-                    (string_protein_interactions['gene_b'] == gene_symbol)
-                ]
-                
-                # Calculate network metrics
-                interaction_count = len(gene_interactions)
-                avg_confidence = gene_interactions['combined_score'].mean() if len(gene_interactions) > 0 else 0
-                high_conf_interactions = len(gene_interactions[gene_interactions['combined_score'] >= 0.7])
-                
-                # Get enriched pathways for this gene - FIXED PARSING
-                gene_pathways = []
-                if len(string_functional_enrichment) > 0:
-                    for _, enrich_row in string_functional_enrichment.iterrows():
-                        # Parse the complex input_proteins structure
-                        input_proteins = enrich_row.get('input_proteins', [])
-                        
-                        # Extract gene symbols from the complex protein objects
-                        pathway_genes = []
-                        if input_proteins is not None:
-                            try:
-                                # Handle both array and list formats
-                                if hasattr(input_proteins, '__iter__'):
-                                    for protein_obj in input_proteins:
-                                        if isinstance(protein_obj, dict):
-                                            preferred_name = protein_obj.get('preferredName', '')
-                                            if preferred_name:
-                                                pathway_genes.append(preferred_name)
-                                        elif isinstance(protein_obj, str):
-                                            # Fallback for simple string format
-                                            pathway_genes.append(protein_obj)
-                            except Exception as e:
-                                context.log.warning(f"Error parsing input_proteins for {enrich_row['term']}: {e}")
-                        
-                        # Check if this gene is in this pathway
-                        if gene_symbol in pathway_genes:
-                            gene_pathways.append({
-                                'category': enrich_row['category'],
-                                'term': enrich_row['term'],
-                                'description': enrich_row['description'],
-                                'fdr': enrich_row['fdr']
-                            })
-                
-                # Network centrality (simple degree centrality)
-                degree_centrality = interaction_count / max(1, len(string_protein_interactions)) * 100
-                
-                gene_summaries.append({
-                    'gene_symbol': gene_symbol,
-                    'interaction_count': interaction_count,
-                    'avg_interaction_confidence': round(avg_confidence, 3),
-                    'high_confidence_interactions': high_conf_interactions,
-                    'degree_centrality': round(degree_centrality, 2),
-                    'pathway_count': len(gene_pathways),
-                    'significant_pathways': len([p for p in gene_pathways if p['fdr'] < 0.05]),
-                    'top_pathway': gene_pathways[0]['description'] if gene_pathways else None,
-                    'pathway_evidence_score': len([p for p in gene_pathways if p['fdr'] < 0.05]) * 10,  # Simple scoring
-                    'pathways_list': [p['description'] for p in gene_pathways if p['fdr'] < 0.05]  # Store pathway names
-                })
-    
-    if gene_summaries:
-        df = pd.DataFrame(gene_summaries)
-        
-        # Sort by combined network and pathway evidence
-        df['combined_pathway_score'] = (
-            df['interaction_count'] * 0.3 + 
-            df['high_confidence_interactions'] * 0.4 + 
-            df['pathway_evidence_score'] * 0.3
-        )
-        df = df.sort_values('combined_pathway_score', ascending=False).reset_index(drop=True)
-        
-        context.log.info(f"Pathway network summary:")
-        context.log.info(f"  Genes with network data: {len(df)}")
-        
-        if len(df) > 0:
-            avg_interactions = df['interaction_count'].mean()
-            genes_with_pathways = len(df[df['pathway_count'] > 0])
-            context.log.info(f"  Average interactions per gene: {avg_interactions:.1f}")
-            context.log.info(f"  Genes with pathway annotations: {genes_with_pathways}")
-            
-            # Log pathway details for genes with significant pathways
-            genes_with_sig_pathways = df[df['significant_pathways'] > 0]
-            if len(genes_with_sig_pathways) > 0:
-                context.log.info(f"  Genes with significant pathways:")
-                for _, gene_row in genes_with_sig_pathways.iterrows():
-                    pathways_str = ", ".join(gene_row['pathways_list'])
-                    context.log.info(f"    {gene_row['gene_symbol']}: {pathways_str}")
-            
-            # Log top genes
-            top_genes = df.head(3)[['gene_symbol', 'combined_pathway_score', 'interaction_count', 'pathway_count']]
-            context.log.info(f"Top genes by pathway evidence: {top_genes.to_dict('records')}")
-        
-        context.add_output_metadata({
-            "genes_with_network_data": len(df),
-            "avg_interactions_per_gene": float(df['interaction_count'].mean()) if len(df) > 0 else 0,
-            "genes_with_pathways": len(df[df['pathway_count'] > 0]) if len(df) > 0 else 0,
-            "genes_with_significant_pathways": len(df[df['significant_pathways'] > 0]) if len(df) > 0 else 0,
-            "top_pathway_gene": df.iloc[0]['gene_symbol'] if len(df) > 0 else "None"
-        })
-        
-    else:
-        df = pd.DataFrame()
-        context.log.warning("No pathway/network data to summarize")
-        
-    return df
 
 @asset(
-    deps=["gwas_eqtl_integrated", "pathway_network_summary", "literature_analysis"],
+    deps=["gwas_eqtl_integrated", "string_protein_interactions", "string_functional_enrichment", "literature_analysis"],
     group_name="data_integration",
     compute_kind="python",
     tags={"data_type": "integrated"}
@@ -321,7 +187,8 @@ def pathway_network_summary(
 def multi_evidence_integrated(
     context: AssetExecutionContext,
     gwas_eqtl_integrated: pd.DataFrame,
-    pathway_network_summary: pd.DataFrame,
+    string_protein_interactions: pd.DataFrame,
+    string_functional_enrichment: pd.DataFrame,
     literature_analysis: pd.DataFrame
 ) -> pd.DataFrame:
     """
@@ -336,29 +203,77 @@ def multi_evidence_integrated(
     # Start with GWAS/eQTL data
     integrated_data = gwas_eqtl_integrated.copy()
     
-    # Add pathway/network evidence
-    if len(pathway_network_summary) > 0:
-        # Merge pathway data
-        pathway_dict = pathway_network_summary.set_index('gene_symbol').to_dict('index')
+    # Build pathway/network evidence directly (consolidating pathway_network_summary functionality)
+    context.log.info("Building pathway network summaries directly during integration")
+    
+    # Initialize pathway columns
+    integrated_data['interaction_count'] = 0
+    integrated_data['pathway_count'] = 0
+    integrated_data['degree_centrality'] = 0
+    integrated_data['pathway_evidence_score'] = 0
+    
+    if len(string_protein_interactions) > 0:
+        # Get unique gene symbols from our target genes
+        target_genes = set(integrated_data['gene_symbol'].tolist())
         
-        integrated_data['interaction_count'] = integrated_data['gene_symbol'].map(
-            lambda g: pathway_dict.get(g, {}).get('interaction_count', 0)
-        )
-        integrated_data['pathway_count'] = integrated_data['gene_symbol'].map(
-            lambda g: pathway_dict.get(g, {}).get('pathway_count', 0)
-        )
-        integrated_data['degree_centrality'] = integrated_data['gene_symbol'].map(
-            lambda g: pathway_dict.get(g, {}).get('degree_centrality', 0)
-        )
-        integrated_data['pathway_evidence_score'] = integrated_data['gene_symbol'].map(
-            lambda g: pathway_dict.get(g, {}).get('pathway_evidence_score', 0)
-        )
-    else:
-        # No pathway data available
-        integrated_data['interaction_count'] = 0
-        integrated_data['pathway_count'] = 0
-        integrated_data['degree_centrality'] = 0
-        integrated_data['pathway_evidence_score'] = 0
+        # Analyze network properties for each target gene
+        for _, gene_row in integrated_data.iterrows():
+            gene_symbol = gene_row['gene_symbol']
+            
+            # Count interactions for this gene
+            gene_interactions = string_protein_interactions[
+                (string_protein_interactions['gene_a'] == gene_symbol) |
+                (string_protein_interactions['gene_b'] == gene_symbol)
+            ]
+            
+            # Calculate network metrics
+            interaction_count = len(gene_interactions)
+            avg_confidence = gene_interactions['combined_score'].mean() if len(gene_interactions) > 0 else 0
+            high_conf_interactions = len(gene_interactions[gene_interactions['combined_score'] >= 0.7])
+            
+            # Get enriched pathways for this gene
+            gene_pathways = []
+            if len(string_functional_enrichment) > 0:
+                for _, enrich_row in string_functional_enrichment.iterrows():
+                    # Parse the complex input_proteins structure
+                    input_proteins = enrich_row.get('input_proteins', [])
+                    
+                    # Extract gene symbols from the complex protein objects
+                    pathway_genes = []
+                    if input_proteins is not None:
+                        try:
+                            if hasattr(input_proteins, '__iter__'):
+                                for protein_obj in input_proteins:
+                                    if isinstance(protein_obj, dict):
+                                        preferred_name = protein_obj.get('preferredName', '')
+                                        if preferred_name:
+                                            pathway_genes.append(preferred_name)
+                                    elif isinstance(protein_obj, str):
+                                        pathway_genes.append(protein_obj)
+                        except Exception as e:
+                            context.log.warning(f"Error parsing input_proteins for {enrich_row['term']}: {e}")
+                    
+                    # Check if this gene is in this pathway
+                    if gene_symbol in pathway_genes:
+                        gene_pathways.append({
+                            'category': enrich_row['category'],
+                            'term': enrich_row['term'],
+                            'description': enrich_row['description'],
+                            'fdr': enrich_row['fdr']
+                        })
+            
+            # Network centrality (simple degree centrality)
+            degree_centrality = interaction_count / max(1, len(string_protein_interactions)) * 100
+            
+            # Simple pathway evidence scoring
+            pathway_evidence_score = len([p for p in gene_pathways if p['fdr'] < 0.05]) * 10
+            
+            # Update the integrated_data row for this gene
+            gene_idx = integrated_data[integrated_data['gene_symbol'] == gene_symbol].index[0]
+            integrated_data.loc[gene_idx, 'interaction_count'] = interaction_count
+            integrated_data.loc[gene_idx, 'pathway_count'] = len(gene_pathways)
+            integrated_data.loc[gene_idx, 'degree_centrality'] = round(degree_centrality, 2)
+            integrated_data.loc[gene_idx, 'pathway_evidence_score'] = pathway_evidence_score
     
     # Add literature evidence
     if len(literature_analysis) > 0:

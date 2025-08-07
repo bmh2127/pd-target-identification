@@ -440,12 +440,11 @@ def sanitize_dict_for_json(obj):
         return str(obj)
 
 @asset(
-    deps=["pathway_network_summary", "string_protein_interactions", "string_functional_enrichment", "multi_evidence_integrated"],
+    deps=["string_protein_interactions", "string_functional_enrichment", "multi_evidence_integrated"],
     description="Generate pathway evidence episodes from functional and interaction data"
 )
 def pathway_evidence_episodes(
     context: AssetExecutionContext,
-    pathway_network_summary: pd.DataFrame,
     string_protein_interactions: pd.DataFrame,
     string_functional_enrichment: pd.DataFrame,
     multi_evidence_integrated: pd.DataFrame
@@ -459,24 +458,22 @@ def pathway_evidence_episodes(
     Returns:
         DataFrame with pathway evidence episodes for genes with functional data
     """
-    context.log.info(f"Creating pathway evidence episodes from {len(pathway_network_summary)} gene pathway profiles")
+    # Get genes from multi_evidence_integrated that have pathway data
+    genes_with_pathways = multi_evidence_integrated[multi_evidence_integrated['pathway_count'] > 0]['gene_symbol'].tolist()
+    context.log.info(f"Creating pathway evidence episodes for {len(genes_with_pathways)} genes with pathway data")
     
     episodes = []
     successful_episodes = 0
     failed_episodes = 0
-    
-    # Get genes that have pathway data and are in the integrated analysis
-    target_genes = set(multi_evidence_integrated['gene_symbol'].tolist())
-    genes_with_pathways = pathway_network_summary['gene_symbol'].unique() if 'gene_symbol' in pathway_network_summary.columns else []
-    genes_to_process = [gene for gene in genes_with_pathways if gene in target_genes]
+    genes_to_process = genes_with_pathways
     
     context.log.info(f"Processing pathway evidence for {len(genes_to_process)} genes")
     
     for gene_symbol in genes_to_process:
         try:
-            # Get pathway summary data for this gene
-            gene_pathway_data = pathway_network_summary[
-                pathway_network_summary['gene_symbol'] == gene_symbol
+            # Get pathway summary data for this gene from multi_evidence_integrated
+            gene_pathway_data = multi_evidence_integrated[
+                multi_evidence_integrated['gene_symbol'] == gene_symbol
             ]
             
             if len(gene_pathway_data) == 0:
